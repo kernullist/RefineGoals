@@ -109,3 +109,12 @@ For UX, dashboard, visualization, or interaction choices, the assistant should a
 If the user's answer is vague or partial, the assistant should recommend a practical default, mark it as an assumption awaiting confirmation, and ask one question that lets the user accept or override the recommendation.
 
 Generated documents should be useful as standalone handoff artifacts. In particular, `Technical Spec` and `AI Implementation Prompt` are expected to contain enough context, modules, data model, API surface, UX flow, build order, risks, and definition of done for another AI model to implement the program without reading the original chat.
+
+Document quality bar:
+
+- confirmed decisions are separated from assumptions
+- unresolved unknowns stay visible instead of being silently guessed
+- implementation modules and data/API contracts are explicit
+- failure behavior and privacy/security notes are included
+- test matrix and final implementation checklist are included
+- a coding AI can use the generated handoff docs without needing the chat transcript

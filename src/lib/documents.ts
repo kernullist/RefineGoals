@@ -22,6 +22,14 @@ function numbered(items: string[]): string {
   return items.map((item, index) => `${index + 1}. ${item}`).join("\n");
 }
 
+function checkbox(items: string[]): string {
+  if (items.length === 0) {
+    return "- [ ] TBD";
+  }
+
+  return items.map((item) => `- [ ] ${item}`).join("\n");
+}
+
 export function buildDashboardDocuments(state: GoalState): DashboardDocument[] {
   return [
     {
@@ -46,6 +54,10 @@ ${list(state.unknowns)}
 
 ## Success Signal
 - A future implementer can describe the target users, core workflow, required outputs, and implementation boundaries without reading the chat history.
+
+## Handoff Readiness
+- This document is a product brief, not the full implementation contract.
+- Use Technical Spec and AI Implementation Prompt as the implementation source of truth.
 `,
     },
     {
@@ -78,6 +90,14 @@ ${state.mustHaveFeatures.length === 0 ? "- TBD" : state.mustHaveFeatures
 
 ## Non-Goals
 - TBD unless explicitly decided.
+
+## Requirement Traceability Checklist
+${checkbox([
+  "Every must-have feature has a visible UI entry point or API behavior.",
+  "Every generated artifact can be traced back to goal-state fields.",
+  "Every open question remains visible until answered or explicitly dismissed.",
+  "Every provider/search/storage failure has a user-visible fallback or error state.",
+])}
 `,
     },
     {
@@ -98,6 +118,14 @@ ${list(state.decisions)}
 - Storage layer: durable session, message, attachment, goal-state, and generated-document persistence.
 - Export layer: generated Markdown documents that can be handed to another AI model or engineering team.
 
+## Implementation Contract
+- Treat confirmed decisions as requirements.
+- Treat unknowns as unresolved assumptions that must be surfaced in the UI and documents.
+- Do not silently implement a guessed answer for an unknown. Recommend a default and ask for confirmation.
+- Preserve local-first behavior unless a later decision explicitly requires SaaS/cloud behavior.
+- Generated documents must be regenerated from the latest goal state after every successful model turn.
+- A coding AI should stop and ask for clarification only when an item blocks implementation and no recommended default is reasonable.
+
 ## Core Modules
 - Session Manager: creates, lists, selects, deletes, and persists goal-refinement sessions.
 - Conversation Engine: stores user/assistant turns, pending states, provider metadata, and follow-up choices.
@@ -112,6 +140,15 @@ ${list(state.decisions)}
 - Message: id, sessionId, role, content, metadata, createdAt.
 - Attachment: id, sessionId, fileName, mimeType, path, purpose, createdAt.
 - Document: id, sessionId, kind, title, content, timestamps.
+
+## State Transitions
+1. New session: create empty goal state with raw user intent.
+2. User message submitted: persist user message and show optimistic pending UI.
+3. Research phase: optionally gather text/image evidence when search is enabled or recommendation is requested.
+4. Model phase: produce assistant message, updated goal state, one next question, and optional selectable choices.
+5. Validation phase: parse model output, preserve uncertain content in unknowns, and fall back gracefully on failure.
+6. Persistence phase: update session, append assistant message, regenerate documents.
+7. UI phase: replace pending response, refresh dashboard panels, keep panel scrolling isolated.
 
 ## API Surface
 - GET /api/sessions: list sessions with messages, attachments, and documents.
@@ -130,6 +167,21 @@ ${list(state.decisions)}
 6. Dashboard updates decisions, unknowns, risks, and generated documents.
 7. User exports implementation-grade Markdown artifacts.
 
+## Error And Fallback Behavior
+- Model provider missing key: show provider-specific configuration error and keep the session usable.
+- Model response is not strict JSON: extract JSON if possible; otherwise use the text as assistant content.
+- Model/search timeout: keep pending UI visible until server returns; if a fallback is used, include the failure reason.
+- Image reference search fails: render a wireframe-style visual hint instead of blocking the response.
+- Session deletion fails: leave the item in the list and avoid destructive local state changes.
+- Upload fails: keep the session intact and surface a recoverable error.
+
+## Security And Privacy Notes
+- Local MVP stores session data and uploads on the local machine.
+- Do not commit .env, local DB files, uploads, or generated private data.
+- API keys must stay server-side and must never be exposed in client-rendered metadata.
+- Uploaded images may contain sensitive product or design information; keep paths local unless cloud storage is explicitly added.
+- Search snippets and image URLs are external evidence, not verified facts.
+
 ## Implementation Constraints
 ${list(state.constraints)}
 
@@ -145,6 +197,19 @@ ${list(state.references)}
 - UI test pending message display, provider selection persistence, session deletion, and panel scrolling.
 - Manual test at least one hosted provider and one local provider path.
 - Verify generated documents remain useful without chat history.
+
+## Test Matrix
+${checkbox([
+  "Create a new session from a vague goal.",
+  "Send a message and verify optimistic user bubble plus pending assistant bubble.",
+  "Receive a model response and verify dashboard state changes.",
+  "Ask an ambiguous question and verify exactly one follow-up question.",
+  "Ask for a recommendation and verify search is forced when appropriate.",
+  "Ask for UX options and verify selectable cards with image or wireframe preview.",
+  "Delete the active session and verify selection moves safely.",
+  "Regenerate and download all documents.",
+  "Run without provider keys and verify fallback reason is visible.",
+])}
 `,
     },
     {
@@ -159,6 +224,9 @@ ${state.rawIntent || state.title}
 
 ## Context For The Implementing AI
 You only have this document. Do not assume access to the original conversation. Treat every TBD as an explicit gap to resolve before implementation. Preserve confirmed decisions and do not silently convert unknowns into requirements.
+
+## Implementation Mission
+Build the smallest production-quality version that satisfies the confirmed goal state while keeping unresolved assumptions visible. Prefer a complete, reliable local MVP over a broad but shallow prototype.
 
 ## Required Features
 ${list(state.mustHaveFeatures)}
@@ -181,11 +249,29 @@ ${numbered([
 - Choice cards for ambiguous UX/product decisions, including a recommended option when appropriate.
 - Document viewer/export controls.
 
+## Suggested File/Module Boundaries
+- App shell: layout, panel sizing, responsive behavior, and global navigation.
+- Sessions API: create, list, load, delete sessions.
+- Chat API: model call orchestration, search orchestration, parsing, fallback, and document regeneration.
+- Storage layer: local database schema and persistence helpers.
+- AI provider layer: provider config, model naming normalization, request/response handling.
+- Search layer: text search, image search, evidence summarization, timeouts.
+- Document layer: deterministic Markdown generation from goal state.
+- UI components: message bubble, pending response, choice card, dashboard panel, document preview.
+
 ## Data And API Requirements
 - Persist all user-visible sessions and generated documents locally unless a later requirement says otherwise.
 - Keep model-provider details out of UI business logic.
 - Store provider metadata for each assistant message.
 - Keep generated documents deterministic from the latest goal state where practical.
+
+## Prompting And Model Behavior Requirements
+- Ask at most one main clarification question per response.
+- If user input is vague, recommend a practical default and mark it as an assumption awaiting confirmation.
+- If the user asks for a recommendation, use search evidence when available and explain the recommendation.
+- If UX choices are needed, provide selectable options with visual references or wireframe-style hints.
+- Keep confirmed decisions separate from unknowns.
+- Do not overwrite unrelated goal-state fields just because the model response omitted them.
 
 ## Constraints
 ${list(state.constraints)}
@@ -205,6 +291,17 @@ ${list(state.risks)}
 - Ambiguous user input leads to a recommended default plus one confirmation question.
 - Long-running model/search operations show visible progress.
 - Generated artifacts are readable, downloadable, and aligned with the current goal state.
+
+## Final Implementation Checklist
+${checkbox([
+  "No required workflow is represented only as placeholder text.",
+  "All persistent data survives page refresh.",
+  "All provider and search failures are recoverable.",
+  "UI does not depend on browser extensions or client-only data for first render correctness.",
+  "Left, center, and right panels scroll independently.",
+  "Generated documents can be read independently from the chat history.",
+  "README matches the implemented setup and behavior.",
+])}
 `,
     },
   ];
