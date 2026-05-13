@@ -435,9 +435,9 @@ export default function Home() {
   }
 
   return (
-    <main className="min-h-screen bg-slate-100 text-slate-950">
-      <div className="grid min-h-screen grid-cols-1 lg:grid-cols-[272px_minmax(0,1fr)] xl:grid-cols-[272px_minmax(0,1fr)_392px]">
-        <aside className="hidden border-r border-slate-200 bg-slate-950 text-white lg:block">
+    <main className="h-screen overflow-hidden bg-slate-100 text-slate-950">
+      <div className="grid h-full min-h-0 grid-cols-1 lg:grid-cols-[272px_minmax(0,1fr)] xl:grid-cols-[272px_minmax(0,1fr)_392px]">
+        <aside className="hidden min-h-0 border-r border-slate-200 bg-slate-950 text-white lg:flex lg:flex-col">
           <div className="flex h-16 items-center justify-between border-b border-white/10 px-4">
             <div className="flex items-center gap-2">
               <div className="flex h-9 w-9 items-center justify-center rounded-md bg-cyan-400 text-slate-950">
@@ -458,7 +458,7 @@ export default function Home() {
             </button>
           </div>
 
-          <div className="space-y-2 p-3">
+          <div className="min-h-0 flex-1 space-y-2 overflow-y-auto p-3">
             {sessions.length === 0 ? (
               <button
                 className="w-full rounded-md border border-white/10 px-3 py-3 text-left text-sm text-slate-300 hover:bg-white/10"
@@ -511,8 +511,8 @@ export default function Home() {
           </div>
         </aside>
 
-        <section className="flex min-h-screen flex-col bg-white">
-          <header className="flex min-h-16 items-center justify-between border-b border-slate-200 px-5">
+        <section className="flex min-h-0 flex-col bg-white">
+          <header className="flex min-h-16 shrink-0 items-center justify-between border-b border-slate-200 px-5">
             <div>
               <h2 className="text-base font-semibold">
                 {active?.title || "목표 구체화"}
@@ -527,7 +527,7 @@ export default function Home() {
             </div>
           </header>
 
-          <div className="flex-1 overflow-y-auto px-5 py-6" ref={messagesRef}>
+          <div className="min-h-0 flex-1 overflow-y-auto px-5 py-6" ref={messagesRef}>
             {emptyState ? (
               <div className="mx-auto flex max-w-2xl flex-col items-center justify-center py-24 text-center">
                 <div className="mb-6 flex h-16 w-16 items-center justify-center rounded-lg bg-slate-950 text-cyan-300">
@@ -606,7 +606,7 @@ export default function Home() {
           </div>
 
           <form
-            className="border-t border-slate-200 bg-white p-4"
+            className="shrink-0 border-t border-slate-200 bg-white p-4"
             onSubmit={submit}
           >
             <div className="mx-auto max-w-3xl rounded-lg border border-slate-200 bg-slate-50 p-2 shadow-sm">
@@ -683,8 +683,8 @@ export default function Home() {
           </form>
         </section>
 
-        <aside className="hidden border-l border-slate-200 bg-slate-50 xl:block">
-          <div className="flex h-16 items-center justify-between border-b border-slate-200 px-5">
+        <aside className="hidden min-h-0 border-l border-slate-200 bg-slate-50 xl:flex xl:flex-col">
+          <div className="flex h-16 shrink-0 items-center justify-between border-b border-slate-200 px-5">
             <div className="flex items-center gap-2">
               <Settings2 size={18} />
               <h2 className="text-sm font-semibold">Goal Dashboard</h2>
@@ -694,7 +694,7 @@ export default function Home() {
             </div>
           </div>
 
-          <div className="h-[calc(100vh-4rem)] overflow-y-auto p-5">
+          <div className="min-h-0 flex-1 overflow-y-auto p-5">
             {!active ? (
               <p className="text-sm text-slate-500">
                 목표 세션을 만들면 대시보드가 여기에 표시됩니다.
