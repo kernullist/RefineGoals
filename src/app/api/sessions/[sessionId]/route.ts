@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { rm } from "fs/promises";
 import path from "path";
 import { db } from "@/lib/db";
-import { toGoalState } from "@/lib/goal-state";
+import { serializeFullSession } from "@/lib/session-serializer";
 
 export async function GET(
   _request: Request,
@@ -22,12 +22,7 @@ export async function GET(
   }
 
   return NextResponse.json({
-    session: {
-      ...toGoalState(session),
-      messages: session.messages,
-      attachments: session.attachments,
-      documents: session.documents,
-    },
+    session: serializeFullSession(session),
   });
 }
 

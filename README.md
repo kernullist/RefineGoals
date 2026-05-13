@@ -20,6 +20,9 @@ RefineGoals is a local-first web tool for turning vague goals into concrete, AI-
   - decisions
   - completeness score
 - Clarification-first behavior when user requests are unclear, underspecified, contradictory, or conflict with the current goal state
+- Retry action on model/client failure messages so the last user request can be sent again
+- Implementation-ready state at 85%+ completeness with dashboard HTML export and AI handoff Markdown export
+- Empty starter sessions stay empty until the first real user message, so they do not create misleading handoff documents
 - Provider abstraction for:
   - OpenRouter
   - DeepSeek
@@ -28,6 +31,7 @@ RefineGoals is a local-first web tool for turning vague goals into concrete, AI-
 - Tavily search provider hook
 - Local image upload for UI/design, product/function, and mood/style references
 - Image uploads are local-only, limited to image MIME types, and capped at 10MB per file
+- Next.js development route indicator is disabled so the local UI does not show framework controls
 - Dashboard document generation:
   - Goal Brief
   - Requirements
@@ -81,6 +85,8 @@ For the direct DeepSeek API, use direct model names such as `deepseek-v4-flash` 
 
 If no provider key or local model is available, the app still creates a fallback local goal draft so the UI and persistence flow remain usable.
 
+Search is best-effort. Tavily text and image search failures, network errors, or timeouts do not fail the chat request; the model receives an empty search summary and the user can continue refining the goal.
+
 ## Development
 
 ```powershell
@@ -109,6 +115,12 @@ For UX, dashboard, visualization, or interaction choices, the assistant should a
 
 If the user's answer is vague or partial, the assistant should recommend a practical default, mark it as an assumption awaiting confirmation, and ask one question that lets the user accept or override the recommendation.
 
+Goal clarity is considered implementation-ready when the score is roughly 85% or higher and the remaining unknowns are non-blocking. In practice, another coding AI should be able to identify the target users, primary workflow, required outputs, data/API boundaries, core constraints, failure behavior, and definition of done from the generated documents alone. A score below that should keep driving one high-leverage question or recommendation at a time.
+
+When a session reaches implementation-ready status, the UI shows a ready banner with direct actions to inspect the dashboard in the center panel, export the full dashboard as HTML, and export an AI-agent handoff Markdown file whose filename is derived from the current session title.
+
+The dashboard includes an artifact usage guide so users know what to do next. The recommended handoff is the full generated Handoff Markdown file shown in the dashboard guide. `AI Implementation Prompt` is one execution-focused section inside that handoff, not the default standalone artifact. The dashboard HTML is for human review, sharing, and browsing the generated documents.
+
 Generated documents should be useful as standalone handoff artifacts. In particular, `Technical Spec` and `AI Implementation Prompt` are expected to contain enough context, modules, data model, API surface, UX flow, build order, risks, and definition of done for another AI model to implement the program without reading the original chat.
 
 Document quality bar:
@@ -117,7 +129,12 @@ Document quality bar:
 - unresolved unknowns stay visible instead of being silently guessed
 - implementation modules and data/API contracts are explicit
 - failure behavior and privacy/security notes are included
+- retry behavior is available for model/client response failures
+- implementation-ready sessions expose dashboard HTML export and Handoff Markdown export names derived from the current session title
+- dashboards explain whether each export is intended for human review or AI-agent implementation handoff
+- empty starter sessions do not generate documents until a real intent exists
+- search failures degrade to no-search context instead of breaking chat persistence
 - model fallback preserves existing goal-state fields unless explicit replacements are returned
-- placeholder sessions can still be seeded from the first real user message if provider fallback is used
+- empty starter sessions can still be seeded from the first real user message if provider fallback is used
 - test matrix and final implementation checklist are included
 - a coding AI can use the generated handoff docs without needing the chat transcript

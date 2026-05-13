@@ -7,6 +7,7 @@ import {
   ImagePlus,
   Loader2,
   MessageSquarePlus,
+  RotateCcw,
   Search,
   Send,
   Settings2,
@@ -22,6 +23,11 @@ import {
   useState,
   useSyncExternalStore,
 } from "react";
+import {
+  dashboardFileName,
+  fileSafeName,
+  handoffFileName,
+} from "@/lib/filename";
 
 type ProviderId = "openrouter" | "deepseek" | "lmstudio" | "ollama";
 
@@ -52,6 +58,17 @@ type Document = {
   kind: string;
   title: string;
   content: string;
+};
+
+type SuggestedChoice = {
+  title?: string;
+  description?: string;
+  tradeoff?: string;
+  reply?: string;
+  imageQuery?: string;
+  imageUrl?: string;
+  imageAlt?: string;
+  visualHint?: string;
 };
 
 type Session = {
@@ -143,22 +160,28 @@ function metadataOf(message: Message) {
   try {
     return JSON.parse(message.metadata || "{}") as {
       providerUsed?: string;
+      failureReason?: string;
+      pending?: boolean;
+      retryable?: boolean;
+      retryMessage?: string;
       nextQuestions?: string[];
-      suggestedChoices?: Array<{
-        title?: string;
-        description?: string;
-        tradeoff?: string;
-        reply?: string;
-        imageQuery?: string;
-        imageUrl?: string;
-        imageAlt?: string;
-        visualHint?: string;
-      }>;
+      suggestedChoices?: SuggestedChoice[];
       suggestedArtifacts?: string[];
     };
   } catch {
     return {};
   }
+}
+
+function previousUserContent(messages: Message[], currentIndex: number) {
+  for (let index = currentIndex - 1; index >= 0; index -= 1) {
+    const message = messages[index];
+    if (message.role === "user" && message.content.trim()) {
+      return message.content;
+    }
+  }
+
+  return "";
 }
 
 function createEmptySession(id: string, message: string): Session {
@@ -226,14 +249,7 @@ function ListBlock({
   );
 }
 
-function ChoicePreview({ choice }: {
-  choice: {
-    title?: string;
-    imageUrl?: string;
-    imageAlt?: string;
-    visualHint?: string;
-  };
-}) {
+function ChoicePreview({ choice }: { choice: SuggestedChoice }) {
   if (choice.imageUrl) {
     return (
       <div className="mb-2 overflow-hidden rounded-md border border-slate-200 bg-slate-100">
@@ -279,6 +295,386 @@ function ChoicePreview({ choice }: {
   );
 }
 
+function choiceReplyText(choice: SuggestedChoice, index: number) {
+  if (choice.reply?.trim()) {
+    return choice.reply.trim();
+  }
+
+  const title = choice.title?.trim() || `옵션 ${index + 1}`;
+  const description = choice.description?.trim();
+
+  return description ? `${title}: ${description}` : `${title} 선택`;
+}
+
+function escapeHtml(value: string | number) {
+  return String(value)
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
+function demoteMarkdownHeadings(content: string) {
+  return content.replace(/^(#{1,5})\s/gm, "#$1 ");
+}
+
+function stripTopHeading(content: string) {
+  return content.replace(/^# .*(\r?\n){1,2}/, "");
+}
+
+function sortedDocuments(session: Session) {
+  const documentOrder = [
+    "goal-brief",
+    "requirements",
+    "technical-spec",
+    "ai-implementation-prompt",
+  ];
+
+  return [...session.documents].sort((left, right) => {
+    const leftIndex = documentOrder.indexOf(left.kind);
+    const rightIndex = documentOrder.indexOf(right.kind);
+
+    return (
+      (leftIndex === -1 ? Number.MAX_SAFE_INTEGER : leftIndex) -
+      (rightIndex === -1 ? Number.MAX_SAFE_INTEGER : rightIndex)
+    );
+  });
+}
+
+function buildHandoffMarkdown(session: Session) {
+  const documents = sortedDocuments(session);
+  const documentSections =
+    documents.length === 0
+      ? "No generated documents yet."
+      : documents
+          .map(
+            (document) =>
+              `## ${document.title}\n\nSource kind: ${document.kind}\n\n${demoteMarkdownHeadings(stripTopHeading(document.content))}`,
+          )
+          .join("\n\n---\n\n");
+
+  return [
+    `# Handoff Bundle: ${session.title}`,
+    "",
+    `Completeness: ${session.completenessScore}%`,
+    `Domain: ${session.domain}`,
+    `Output Type: ${session.outputType}`,
+    "",
+    "## How To Use This Export",
+    "- Give this full Handoff Markdown file to coding AI agents first.",
+    "- Start with Goal Brief for product context, then use Requirements and Technical Spec as the implementation contract.",
+    "- Treat AI Implementation Prompt as the execution section inside this bundle. Pass it alone only when the coding agent has very limited context.",
+    "- Use the Dashboard HTML export for human review, sharing, and status inspection, not as the primary coding-agent artifact.",
+    "- Treat remaining unknowns as explicit assumptions to resolve, not hidden requirements.",
+    "",
+    "## Raw Intent",
+    session.rawIntent || "No raw intent captured yet.",
+    "",
+    documentSections,
+  ].join("\n");
+}
+
+function htmlList(items: string[], empty: string) {
+  if (items.length === 0) {
+    return `<p class="muted">${escapeHtml(empty)}</p>`;
+  }
+
+  return `<ul>${items.map((item) => `<li>${escapeHtml(item)}</li>`).join("")}</ul>`;
+}
+
+function artifactUsageItems(session: Session) {
+  return [
+    {
+      label: "AI agent",
+      title: "AI 코딩 에이전트에게 전달",
+      body: `${handoffFileName(session.title)} 전체를 전달하세요. Goal Brief, Requirements, Technical Spec, AI Implementation Prompt가 함께 있어 가장 안전합니다.`,
+    },
+    {
+      label: "Human review",
+      title: "사람이 검토하거나 공유",
+      body: `${dashboardFileName(session.title)}은 브라우저에서 목표 상태와 산출 문서를 한눈에 확인하는 사람용 대시보드입니다.`,
+    },
+    {
+      label: "Prompt section",
+      title: "AI Implementation Prompt",
+      body: "Handoff 안의 실행 지시 섹션입니다. 단독 전달은 맥락이 줄어드니, 긴 문서를 못 받는 에이전트에게 줄 때만 사용하세요.",
+    },
+    {
+      label: "Contract",
+      title: "Technical Spec / Requirements",
+      body: "구현 계약과 요구사항 체크리스트입니다. 설계 리뷰, 범위 조정, 수락 기준 확인에 사용하세요.",
+    },
+  ];
+}
+
+function artifactUsageHtml(session: Session) {
+  const items = artifactUsageItems(session)
+    .map(
+      (item) => `<div class="guide-item">
+        <div class="guide-label">${escapeHtml(item.label)}</div>
+        <h3>${escapeHtml(item.title)}</h3>
+        <p>${escapeHtml(item.body)}</p>
+      </div>`,
+    )
+    .join("");
+
+  return `<article class="wide card">
+    <h2>산출물 활용 가이드</h2>
+    <p class="muted">기본 원칙은 간단합니다. AI 에이전트에게는 Handoff Markdown 전체를 주고, Dashboard HTML은 사람이 검토할 때 사용합니다.</p>
+    <div class="guide-grid">${items}</div>
+    <div class="callout">권장 첫 지시: 이 Handoff 문서만 기준으로 구현해. Open Questions는 임의 확정하지 말고 합리적 기본값을 제안하거나 질문해.</div>
+  </article>`;
+}
+
+function buildDashboardHtml(session: Session) {
+  const documents = sortedDocuments(session);
+  const documentCards =
+    documents.length === 0
+      ? `<p class="muted">No generated documents yet.</p>`
+      : documents
+          .map(
+            (document) => `<section class="doc">
+              <div class="doc-title">${escapeHtml(document.title)}</div>
+              <div class="doc-kind">${escapeHtml(document.kind)}</div>
+              <pre>${escapeHtml(document.content)}</pre>
+            </section>`,
+          )
+          .join("");
+  const attachments =
+    session.attachments.length === 0
+      ? `<p class="muted">No image references.</p>`
+      : `<ul>${session.attachments
+          .map(
+            (attachment) =>
+              `<li>${escapeHtml(attachment.fileName)} <span>${escapeHtml(attachment.purpose)}</span></li>`,
+          )
+          .join("")}</ul>`;
+
+  return `<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>[RefineGoals] Dashboard - ${escapeHtml(session.title)}</title>
+  <style>
+    :root { color-scheme: light; --ink: #0f172a; --muted: #64748b; --line: #dbe3ef; --panel: #f8fafc; --accent: #0891b2; }
+    * { box-sizing: border-box; }
+    body { margin: 0; background: #eef3f8; color: var(--ink); font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; line-height: 1.65; }
+    main { max-width: 1180px; margin: 0 auto; padding: 32px; }
+    header { border: 1px solid var(--line); background: white; border-radius: 8px; padding: 24px; }
+    h1 { margin: 0 0 10px; font-size: 28px; line-height: 1.25; }
+    h2 { margin: 0 0 12px; font-size: 16px; text-transform: uppercase; letter-spacing: 0; color: #334155; }
+    .meta { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 16px; }
+    .pill { border: 1px solid var(--line); border-radius: 6px; background: var(--panel); padding: 6px 10px; font-size: 13px; font-weight: 600; }
+    .score { color: var(--accent); }
+    .grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; margin-top: 18px; }
+    .card, .doc { border: 1px solid var(--line); background: white; border-radius: 8px; padding: 18px; }
+    .wide { grid-column: 1 / -1; }
+    .guide-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; margin-top: 14px; }
+    .guide-item { border: 1px solid var(--line); border-radius: 8px; background: var(--panel); padding: 14px; }
+    .guide-item h3 { margin: 6px 0 8px; font-size: 15px; }
+    .guide-item p { margin: 0; color: #475569; }
+    .guide-label { color: var(--accent); font-size: 12px; font-weight: 750; text-transform: uppercase; }
+    .callout { margin-top: 14px; border-left: 3px solid var(--accent); background: #ecfeff; padding: 12px 14px; border-radius: 6px; color: #164e63; font-weight: 650; }
+    ul { margin: 0; padding-left: 20px; }
+    li { margin: 6px 0; }
+    .muted, .doc-kind { color: var(--muted); }
+    .doc-title { font-weight: 750; font-size: 16px; }
+    pre { overflow: auto; white-space: pre-wrap; background: #0f172a; color: #e2e8f0; border-radius: 6px; padding: 16px; font-size: 12px; line-height: 1.55; }
+    span { color: var(--muted); font-size: 12px; }
+    @media (max-width: 820px) { main { padding: 16px; } .grid { grid-template-columns: 1fr; } }
+  </style>
+</head>
+<body>
+  <main>
+    <header>
+      <h1>${escapeHtml(session.title)}</h1>
+      <p>${escapeHtml(session.rawIntent || "No raw intent captured yet.")}</p>
+      <div class="meta">
+        <div class="pill score">${escapeHtml(session.completenessScore)}% complete</div>
+        <div class="pill">${escapeHtml(session.domain)}</div>
+        <div class="pill">${escapeHtml(session.outputType)}</div>
+        <div class="pill">Generated by RefineGoals</div>
+      </div>
+    </header>
+    <section class="grid">
+      <article class="card"><h2>Decisions</h2>${htmlList(session.decisions, "No decisions yet.")}</article>
+      <article class="card"><h2>Must Have</h2>${htmlList(session.mustHaveFeatures, "No must-have features yet.")}</article>
+      <article class="card"><h2>Nice To Have</h2>${htmlList(session.niceToHaveFeatures, "No nice-to-have features yet.")}</article>
+      <article class="card"><h2>Unknowns</h2>${htmlList(session.unknowns, "No open questions.")}</article>
+      <article class="card"><h2>Risks</h2>${htmlList(session.risks, "No risks captured.")}</article>
+      <article class="card"><h2>References</h2>${htmlList(session.references, "No external references captured.")}${attachments}</article>
+      ${artifactUsageHtml(session)}
+      <article class="wide card"><h2>Generated Documents</h2>${documentCards}</article>
+    </section>
+  </main>
+</body>
+</html>`;
+}
+
+function ArtifactUsageGuide({ session }: { session: Session }) {
+  return (
+    <section className="rounded-lg border border-cyan-100 bg-cyan-50/70 p-4">
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <h3 className="text-sm font-semibold text-slate-900">
+            산출물 활용 가이드
+          </h3>
+          <p className="mt-2 text-sm leading-6 text-slate-600">
+            AI 에이전트에게는 Handoff Markdown 전체를 주고, Dashboard HTML은
+            사람이 검토하거나 공유할 때 사용하세요.
+          </p>
+        </div>
+        <FileText className="shrink-0 text-cyan-700" size={18} />
+      </div>
+      <div className="mt-4 grid gap-3 md:grid-cols-2">
+        {artifactUsageItems(session).map((item) => (
+          <div
+            className="rounded-md border border-cyan-100 bg-white p-3"
+            key={item.title}
+          >
+            <div className="text-[11px] font-semibold uppercase tracking-normal text-cyan-700">
+              {item.label}
+            </div>
+            <div className="mt-1 text-sm font-semibold text-slate-800">
+              {item.title}
+            </div>
+            <p className="mt-2 text-xs leading-5 text-slate-500">
+              {item.body}
+            </p>
+          </div>
+        ))}
+      </div>
+      <div className="mt-4 rounded-md border border-cyan-100 bg-white px-3 py-2 text-xs leading-5 text-slate-600">
+        권장 첫 지시: 이 Handoff 문서만 기준으로 구현해. Open Questions는
+        임의 확정하지 말고 합리적 기본값을 제안하거나 질문해.
+      </div>
+    </section>
+  );
+}
+
+function GoalDashboardContent({
+  session,
+  onDownloadDocument,
+}: {
+  session: Session;
+  onDownloadDocument: (document: Document) => void;
+}) {
+  return (
+    <div className="space-y-6">
+      <section className="rounded-lg border border-slate-200 bg-white p-4">
+        <div className="flex items-start justify-between gap-3">
+          <div>
+            <h3 className="text-sm font-semibold">{session.title}</h3>
+            <p className="mt-2 text-sm leading-6 text-slate-500">
+              {session.rawIntent || "아직 원본 목표가 없습니다."}
+            </p>
+          </div>
+          <div className="shrink-0 text-sm font-semibold text-cyan-700">
+            {session.completenessScore}%
+          </div>
+        </div>
+        <div className="mt-4 flex flex-wrap gap-2">
+          <Pill>{session.domain}</Pill>
+          <Pill>{session.outputType}</Pill>
+        </div>
+      </section>
+
+      <ListBlock
+        empty="아직 확정된 결정사항이 없습니다."
+        items={session.decisions}
+        title="Decisions"
+      />
+      <ListBlock
+        empty="필수 기능이 아직 비어 있습니다."
+        items={session.mustHaveFeatures}
+        title="Must Have"
+      />
+      <ListBlock
+        empty="추가 기능 후보가 없습니다."
+        items={session.niceToHaveFeatures}
+        title="Nice To Have"
+      />
+      <ListBlock
+        empty="확인할 질문이 없습니다."
+        items={session.unknowns}
+        title="Unknowns"
+      />
+      <ListBlock
+        empty="운영 리스크가 아직 정리되지 않았습니다."
+        items={session.risks}
+        title="Risks"
+      />
+
+      <section className="space-y-2">
+        <h3 className="text-xs font-semibold uppercase tracking-normal text-slate-500">
+          References
+        </h3>
+        {session.attachments.length === 0 ? (
+          <p className="text-sm leading-6 text-slate-400">
+            참고 이미지가 없습니다.
+          </p>
+        ) : (
+          session.attachments.map((attachment) => (
+            <div
+              className="rounded-md border border-slate-200 bg-white px-3 py-2"
+              key={attachment.id}
+            >
+              <div className="text-sm font-medium text-slate-700">
+                {attachment.fileName}
+              </div>
+              <div className="mt-1 text-xs text-slate-400">
+                {attachment.purpose}
+              </div>
+            </div>
+          ))
+        )}
+      </section>
+
+      <ArtifactUsageGuide session={session} />
+
+      <section className="space-y-2 pb-6">
+        <h3 className="text-xs font-semibold uppercase tracking-normal text-slate-500">
+          Dashboard Documents
+        </h3>
+        {session.documents.length === 0 ? (
+          <p className="text-sm leading-6 text-slate-400">
+            첫 대화를 보내면 Markdown 산출물이 생성됩니다.
+          </p>
+        ) : (
+          session.documents.map((document) => (
+            <div
+              className="rounded-lg border border-slate-200 bg-white p-3"
+              key={document.id}
+            >
+              <div className="flex items-center justify-between gap-3">
+                <div className="flex min-w-0 items-center gap-2">
+                  <FileText className="shrink-0 text-slate-400" size={17} />
+                  <span className="truncate text-sm font-semibold">
+                    {document.title}
+                  </span>
+                </div>
+                <button
+                  aria-label={`Download ${document.title}`}
+                  className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md border border-slate-200 text-slate-600 hover:bg-slate-50"
+                  onClick={() => onDownloadDocument(document)}
+                  type="button"
+                >
+                  <Download size={15} />
+                </button>
+              </div>
+              <pre className="mt-3 max-h-48 overflow-auto whitespace-pre-wrap rounded-md bg-slate-950 p-3 text-xs leading-5 text-slate-100">
+                {document.content}
+              </pre>
+            </div>
+          ))
+        )}
+      </section>
+    </div>
+  );
+}
+
 export default function Home() {
   const hydrated = useHydrated();
   const [sessions, setSessions] = useState<Session[]>([]);
@@ -286,6 +682,7 @@ export default function Home() {
   const [input, setInput] = useState("");
   const [provider, setProvider] = useStoredProvider();
   const [useSearch, setUseSearch] = useState(true);
+  const [viewMode, setViewMode] = useState<"chat" | "dashboard">("chat");
   const [loading, setLoading] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [uploadError, setUploadError] = useState("");
@@ -295,6 +692,7 @@ export default function Home() {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const messagesRef = useRef<HTMLDivElement>(null);
   const endRef = useRef<HTMLDivElement>(null);
+  const pendingIdRef = useRef(0);
 
   const active = useMemo(
     () => sessions.find((session) => session.id === activeId) || sessions[0],
@@ -315,6 +713,8 @@ export default function Home() {
       pendingExchange.assistant,
     ];
   }, [active, pendingExchange]);
+  const implementationReady = Boolean(active && active.completenessScore >= 85);
+  const effectiveViewMode = implementationReady ? viewMode : "chat";
 
   useEffect(() => {
     async function load() {
@@ -357,6 +757,20 @@ export default function Home() {
     }
   }, [visibleMessages.length]);
 
+  useEffect(() => {
+    if (effectiveViewMode !== "chat") {
+      return;
+    }
+
+    const frameId = window.requestAnimationFrame(() => {
+      scrollMessagesToBottom("auto");
+    });
+
+    return () => {
+      window.cancelAnimationFrame(frameId);
+    };
+  }, [effectiveViewMode, active?.id]);
+
   async function refreshSession(sessionId: string) {
     const response = await fetch(`/api/sessions/${sessionId}`);
     const data = (await response.json()) as { session: Session };
@@ -373,9 +787,7 @@ export default function Home() {
     setActiveId(data.session.id);
   }
 
-  async function submit(event: FormEvent) {
-    event.preventDefault();
-    const message = input.trim();
+  async function sendMessage(message: string) {
     if (!message || loading) {
       return;
     }
@@ -383,7 +795,9 @@ export default function Home() {
     setLoading(true);
     setInput("");
 
-    const targetSessionId = active?.id || `pending-session-${Date.now()}`;
+    pendingIdRef.current += 1;
+    const pendingId = pendingIdRef.current;
+    const targetSessionId = active?.id || `pending-session-${pendingId}`;
     const isTemporarySession = !active;
     if (isTemporarySession) {
       setSessions((current) => [
@@ -396,14 +810,14 @@ export default function Home() {
     setPendingExchange({
       sessionId: targetSessionId,
       user: {
-        id: `pending-user-${Date.now()}`,
+        id: `pending-user-${pendingId}`,
         role: "user",
         content: message,
         metadata: "{}",
         createdAt: new Date().toISOString(),
       },
       assistant: {
-        id: `pending-assistant-${Date.now()}`,
+        id: `pending-assistant-${pendingId}`,
         role: "assistant",
         content: "모델이 목표 상태를 정리하는 중입니다...",
         metadata: JSON.stringify({
@@ -467,6 +881,9 @@ export default function Home() {
             metadata: JSON.stringify({
               providerUsed: "client",
               pending: false,
+              retryable: true,
+              retryMessage: message,
+              failureReason: reason,
             }),
           },
         };
@@ -476,30 +893,29 @@ export default function Home() {
     }
   }
 
+  async function submit(event: FormEvent) {
+    event.preventDefault();
+    await sendMessage(input.trim());
+  }
+
   async function createSession() {
     const response = await fetch("/api/sessions", {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
       },
-      body: JSON.stringify({
-        message: "새 목표",
-      }),
+      body: JSON.stringify({}),
     });
     const data = (await response.json()) as { session: Session };
-    setSessions((current) => [
-      {
-        ...data.session,
-        messages: [],
-        attachments: [],
-        documents: [],
-      },
-      ...current,
-    ]);
+    setSessions((current) => [data.session, ...current]);
     setActiveId(data.session.id);
   }
 
   async function deleteSession(sessionId: string) {
+    const nextActiveId =
+      activeId === sessionId
+        ? sessions.find((session) => session.id !== sessionId)?.id || ""
+        : activeId;
     const response = await fetch(`/api/sessions/${sessionId}`, {
       method: "DELETE",
     });
@@ -508,14 +924,15 @@ export default function Home() {
       return;
     }
 
-    setSessions((current) => {
-      const remaining = current.filter((session) => session.id !== sessionId);
-      if (activeId === sessionId) {
-        setActiveId(remaining[0]?.id || "");
-      }
-
-      return remaining;
-    });
+    setPendingExchange((current) =>
+      current?.sessionId === sessionId ? null : current,
+    );
+    setSessions((current) =>
+      current.filter((session) => session.id !== sessionId),
+    );
+    if (activeId === sessionId) {
+      setActiveId(nextActiveId);
+    }
   }
 
   async function uploadFile(file: File) {
@@ -557,15 +974,42 @@ export default function Home() {
   }
 
   function downloadDocument(document: Document) {
-    const blob = new Blob([document.content], {
-      type: "text/markdown;charset=utf-8",
+    downloadTextFile(
+      document.content,
+      `${fileSafeName(document.kind)}.md`,
+      "text/markdown;charset=utf-8",
+    );
+  }
+
+  function downloadTextFile(content: string, filename: string, type: string) {
+    const blob = new Blob([content], {
+      type,
     });
     const url = URL.createObjectURL(blob);
     const anchor = window.document.createElement("a");
     anchor.href = url;
-    anchor.download = `${document.kind}.md`;
+    anchor.download = filename;
+    anchor.style.display = "none";
+    window.document.body.appendChild(anchor);
     anchor.click();
-    URL.revokeObjectURL(url);
+    anchor.remove();
+    window.setTimeout(() => URL.revokeObjectURL(url), 0);
+  }
+
+  function downloadHandoffMarkdown(session: Session) {
+    downloadTextFile(
+      buildHandoffMarkdown(session),
+      handoffFileName(session.title),
+      "text/markdown;charset=utf-8",
+    );
+  }
+
+  function downloadDashboardHtml(session: Session) {
+    downloadTextFile(
+      buildDashboardHtml(session),
+      dashboardFileName(session.title),
+      "text/html;charset=utf-8",
+    );
   }
 
   const emptyState = visibleMessages.length === 0;
@@ -671,13 +1115,89 @@ export default function Home() {
               </p>
             </div>
             <div className="hidden items-center gap-2 md:flex">
+              {implementationReady ? (
+                <div className="flex rounded-md border border-slate-200 bg-slate-50 p-1">
+                  <button
+                    className={`h-8 rounded px-3 text-xs font-semibold ${
+                      effectiveViewMode === "chat"
+                        ? "bg-white text-slate-950 shadow-sm"
+                        : "text-slate-500 hover:text-slate-800"
+                    }`}
+                    onClick={() => setViewMode("chat")}
+                    type="button"
+                  >
+                    Chat
+                  </button>
+                  <button
+                    className={`h-8 rounded px-3 text-xs font-semibold ${
+                      effectiveViewMode === "dashboard"
+                        ? "bg-white text-slate-950 shadow-sm"
+                        : "text-slate-500 hover:text-slate-800"
+                    }`}
+                    onClick={() => setViewMode("dashboard")}
+                    type="button"
+                  >
+                    Dashboard
+                  </button>
+                </div>
+              ) : null}
               <Pill>{providerLabels[provider]}</Pill>
               <Pill>{useSearch ? "Tavily search on" : "Search off"}</Pill>
             </div>
           </header>
 
+          {active && implementationReady ? (
+            <section className="shrink-0 border-b border-cyan-200 bg-cyan-50 px-5 py-3">
+              <div className="mx-auto flex max-w-5xl flex-wrap items-center justify-between gap-3">
+                <div>
+                  <div className="text-sm font-semibold text-slate-950">
+                    구현 준비 완료
+                  </div>
+                  <p className="text-xs leading-5 text-slate-600">
+                    목표가 {active.completenessScore}%까지 구체화되었습니다.
+                    대시보드와 산출 문서를 바로 검토하고 내보낼 수 있습니다.
+                  </p>
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  <button
+                    className="flex h-9 items-center gap-2 rounded-md border border-cyan-300 bg-white px-3 text-xs font-semibold text-cyan-900 hover:bg-cyan-100"
+                    onClick={() => setViewMode("dashboard")}
+                    type="button"
+                  >
+                    <Settings2 size={15} />
+                    대시보드 보기
+                  </button>
+                  <button
+                    className="flex h-9 items-center gap-2 rounded-md border border-cyan-300 bg-white px-3 text-xs font-semibold text-cyan-900 hover:bg-cyan-100"
+                    onClick={() => downloadDashboardHtml(active)}
+                    type="button"
+                  >
+                    <Download size={15} />
+                    대시보드 HTML Export
+                  </button>
+                  <button
+                    className="flex h-9 items-center gap-2 rounded-md bg-slate-950 px-3 text-xs font-semibold text-white hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-50"
+                    disabled={active.documents.length === 0}
+                    onClick={() => downloadHandoffMarkdown(active)}
+                    type="button"
+                  >
+                    <Download size={15} />
+                    AI Handoff MD
+                  </button>
+                </div>
+              </div>
+            </section>
+          ) : null}
+
           <div className="min-h-0 flex-1 overflow-y-auto px-5 py-6" ref={messagesRef}>
-            {emptyState ? (
+            {effectiveViewMode === "dashboard" && active ? (
+              <div className="mx-auto max-w-5xl">
+                <GoalDashboardContent
+                  onDownloadDocument={downloadDocument}
+                  session={active}
+                />
+              </div>
+            ) : emptyState ? (
               <div className="mx-auto flex max-w-2xl flex-col items-center justify-center py-24 text-center">
                 <div className="mb-6 flex h-16 w-16 items-center justify-center rounded-lg bg-slate-950 text-cyan-300">
                   <Sparkles size={28} />
@@ -693,11 +1213,19 @@ export default function Home() {
               </div>
             ) : (
               <div className="mx-auto max-w-3xl space-y-5">
-                {visibleMessages.map((message) => {
+                {visibleMessages.map((message, messageIndex) => {
                   const meta = metadataOf(message);
-                  const isPending = Boolean(
-                    (meta as { pending?: boolean }).pending,
-                  );
+                  const isPending = Boolean(meta.pending);
+                  const retryMessage =
+                    meta.retryMessage ||
+                    previousUserContent(visibleMessages, messageIndex);
+                  const canRetry =
+                    message.role !== "user" &&
+                    !isPending &&
+                    Boolean(retryMessage) &&
+                    (meta.retryable ||
+                      meta.providerUsed === "fallback" ||
+                      meta.providerUsed === "client");
 
                   return (
                     <div
@@ -740,8 +1268,7 @@ export default function Home() {
                                 key={`${choice.title || "choice"}-${index}`}
                                 onClick={() =>
                                   setInput(
-                                    choice.reply ||
-                                      `${choice.title}: ${choice.description}`,
+                                    choiceReplyText(choice, index),
                                   )
                                 }
                                 type="button"
@@ -776,6 +1303,19 @@ export default function Home() {
                                 {question}
                               </button>
                             ))}
+                          </div>
+                        ) : null}
+                        {canRetry ? (
+                          <div className="mt-3 border-t border-slate-200 pt-3">
+                            <button
+                              className="inline-flex h-8 items-center gap-2 rounded-md border border-cyan-200 bg-white px-3 text-xs font-semibold text-cyan-800 hover:bg-cyan-50 disabled:cursor-not-allowed disabled:opacity-50"
+                              disabled={loading}
+                              onClick={() => void sendMessage(retryMessage)}
+                              type="button"
+                            >
+                              <RotateCcw size={14} />
+                              마지막 요청 다시 전송
+                            </button>
                           </div>
                         ) : null}
                       </div>
@@ -887,110 +1427,10 @@ export default function Home() {
                 목표 세션을 만들면 대시보드가 여기에 표시됩니다.
               </p>
             ) : (
-              <div className="space-y-6">
-                <section className="rounded-lg border border-slate-200 bg-white p-4">
-                  <h3 className="text-sm font-semibold">{active.title}</h3>
-                  <p className="mt-2 text-sm leading-6 text-slate-500">
-                    {active.rawIntent || "아직 원본 목표가 없습니다."}
-                  </p>
-                  <div className="mt-4 flex flex-wrap gap-2">
-                    <Pill>{active.domain}</Pill>
-                    <Pill>{active.outputType}</Pill>
-                  </div>
-                </section>
-
-                <ListBlock
-                  empty="아직 확정된 결정사항이 없습니다."
-                  items={active.decisions}
-                  title="Decisions"
-                />
-                <ListBlock
-                  empty="필수 기능이 아직 비어 있습니다."
-                  items={active.mustHaveFeatures}
-                  title="Must Have"
-                />
-                <ListBlock
-                  empty="추가 기능 후보가 없습니다."
-                  items={active.niceToHaveFeatures}
-                  title="Nice To Have"
-                />
-                <ListBlock
-                  empty="확인할 질문이 없습니다."
-                  items={active.unknowns}
-                  title="Unknowns"
-                />
-                <ListBlock
-                  empty="운영 리스크가 아직 정리되지 않았습니다."
-                  items={active.risks}
-                  title="Risks"
-                />
-
-                <section className="space-y-2">
-                  <h3 className="text-xs font-semibold uppercase tracking-normal text-slate-500">
-                    References
-                  </h3>
-                  {active.attachments.length === 0 ? (
-                    <p className="text-sm leading-6 text-slate-400">
-                      참고 이미지가 없습니다.
-                    </p>
-                  ) : (
-                    active.attachments.map((attachment) => (
-                      <div
-                        className="rounded-md border border-slate-200 bg-white px-3 py-2"
-                        key={attachment.id}
-                      >
-                        <div className="text-sm font-medium text-slate-700">
-                          {attachment.fileName}
-                        </div>
-                        <div className="mt-1 text-xs text-slate-400">
-                          {attachment.purpose}
-                        </div>
-                      </div>
-                    ))
-                  )}
-                </section>
-
-                <section className="space-y-2 pb-6">
-                  <h3 className="text-xs font-semibold uppercase tracking-normal text-slate-500">
-                    Dashboard Documents
-                  </h3>
-                  {active.documents.length === 0 ? (
-                    <p className="text-sm leading-6 text-slate-400">
-                      첫 대화를 보내면 Markdown 산출물이 생성됩니다.
-                    </p>
-                  ) : (
-                    active.documents.map((document) => (
-                      <div
-                        className="rounded-lg border border-slate-200 bg-white p-3"
-                        key={document.id}
-                      >
-                        <div className="flex items-center justify-between gap-3">
-                          <div className="flex min-w-0 items-center gap-2">
-                            <FileText
-                              className="shrink-0 text-slate-400"
-                              size={17}
-                            />
-                            <span className="truncate text-sm font-semibold">
-                              {document.title}
-                            </span>
-                          </div>
-                          <button
-                            aria-label={`Download ${document.title}`}
-                            className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md border border-slate-200 text-slate-600 hover:bg-slate-50"
-                            onClick={() => downloadDocument(document)}
-                            type="button"
-                          >
-                            <Download size={15} />
-                          </button>
-                        </div>
-                        <pre className="mt-3 max-h-48 overflow-auto whitespace-pre-wrap rounded-md bg-slate-950 p-3 text-xs leading-5 text-slate-100">
-                          {document.content}
-                        </pre>
-                      </div>
-                    ))
-                  )}
-                </section>
-              </div>
+              <GoalDashboardContent
+                onDownloadDocument={downloadDocument}
+                session={active}
+              />
             )}
           </div>
         </aside>

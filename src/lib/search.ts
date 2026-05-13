@@ -15,19 +15,30 @@ export async function searchWeb(query: string): Promise<SearchResult[]> {
     return [];
   }
 
-  const response = await fetch("https://api.tavily.com/search", {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${apiKey}`,
-    },
-    body: JSON.stringify({
-      query,
-      search_depth: "basic",
-      include_answer: false,
-      max_results: 5,
-    }),
-  });
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 30000);
+  let response: Response;
+
+  try {
+    response = await fetch("https://api.tavily.com/search", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${apiKey}`,
+      },
+      body: JSON.stringify({
+        query,
+        search_depth: "basic",
+        include_answer: false,
+        max_results: 5,
+      }),
+      signal: controller.signal,
+    });
+  } catch {
+    return [];
+  } finally {
+    clearTimeout(timeoutId);
+  }
 
   if (!response.ok) {
     return [];

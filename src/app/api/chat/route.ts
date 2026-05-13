@@ -14,6 +14,7 @@ import {
   toGoalState,
 } from "@/lib/goal-state";
 import { searchImages, searchWeb, summarizeSearch } from "@/lib/search";
+import { serializeFullSession } from "@/lib/session-serializer";
 
 const chatSchema = z.object({
   sessionId: z.string().optional(),
@@ -83,7 +84,7 @@ function parsePayload(content: string): ModelPayload {
   }
 }
 
-function isPlaceholderState(currentState: ReturnType<typeof toGoalState>) {
+function isEmptyStarterState(currentState: ReturnType<typeof toGoalState>) {
   const rawIntent = currentState.rawIntent.trim();
   return rawIntent === "" || rawIntent === "새 목표";
 }
@@ -95,7 +96,7 @@ function fallbackAssistant(
 ): ModelPayload {
   const fallbackState = createFallbackState(message);
   const goalState: Record<string, unknown> = {};
-  const shouldSeedState = isPlaceholderState(currentState);
+  const shouldSeedState = isEmptyStarterState(currentState);
 
   if (shouldSeedState) {
     goalState.title = fallbackState.title;
@@ -230,6 +231,7 @@ export async function POST(request: Request) {
 
   let payload: ModelPayload;
   let providerUsed: ProviderId | "fallback" = "fallback";
+  let failureReason = "";
 
   try {
     const result = await callModel({
@@ -254,6 +256,7 @@ export async function POST(request: Request) {
     providerUsed = result.providerUsed;
   } catch (error) {
     const reason = error instanceof Error ? error.message : "Unknown model error";
+    failureReason = reason;
     payload = fallbackAssistant(currentState, input.message, reason);
     providerUsed = "fallback";
     console.error(error);
@@ -323,6 +326,9 @@ export async function POST(request: Request) {
       providerUsed,
       searchResults,
       searchForced,
+      retryable: providerUsed === "fallback",
+      retryMessage: providerUsed === "fallback" ? input.message : undefined,
+      failureReason: failureReason || undefined,
       nextQuestions,
       suggestedChoices,
       suggestedArtifacts: payload.suggestedArtifacts || [],
@@ -332,11 +338,6 @@ export async function POST(request: Request) {
   const fullSession = db.getFullSession(session.id);
 
   return NextResponse.json({
-    session: {
-      ...toGoalState(fullSession),
-      messages: fullSession.messages,
-      attachments: fullSession.attachments,
-      documents: fullSession.documents,
-    },
+    session: serializeFullSession(fullSession),
   });
 }
