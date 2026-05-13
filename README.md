@@ -101,3 +101,5 @@ The assistant should not force uncertain user input into confirmed decisions. If
 - ask targeted clarification questions
 - keep uncertain items in `unknowns`
 - only move confirmed answers into `decisions`
+
+If the user cannot choose between options or asks for a recommendation, the assistant should actively recommend one default. For recommendation-style messages, the API also enables search automatically even when the search toggle is off, then combines search evidence with implementation tradeoffs and product reasoning.

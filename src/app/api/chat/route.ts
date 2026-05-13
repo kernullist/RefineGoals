@@ -24,6 +24,29 @@ const chatSchema = z.object({
   useSearch: z.boolean().default(false),
 });
 
+function shouldForceSearch(message: string): boolean {
+  const normalized = message.toLowerCase();
+  const patterns = [
+    "추천",
+    "제안",
+    "골라",
+    "골라줘",
+    "선택",
+    "못 고르",
+    "못고르",
+    "정해줘",
+    "뭐가 좋",
+    "어느 게",
+    "어떤 게",
+    "recommend",
+    "suggest",
+    "choose",
+    "pick",
+  ];
+
+  return patterns.some((pattern) => normalized.includes(pattern));
+}
+
 type ModelPayload = {
   assistantMessage?: string;
   goalState?: Record<string, unknown>;
@@ -105,7 +128,9 @@ export async function POST(request: Request) {
 
   const attachments = db.listAttachments(session.id);
   const currentState = toGoalState(session);
-  const searchResults = input.useSearch ? await searchWeb(input.message) : [];
+  const searchForced = !input.useSearch && shouldForceSearch(input.message);
+  const searchResults =
+    input.useSearch || searchForced ? await searchWeb(input.message) : [];
   const searchSummary = summarizeSearch(searchResults);
   const attachmentSummary =
     attachments.length === 0
@@ -196,6 +221,7 @@ export async function POST(request: Request) {
     metadata: JSON.stringify({
       providerUsed,
       searchResults,
+      searchForced,
       nextQuestions,
       suggestedChoices: payload.suggestedChoices || [],
       suggestedArtifacts: payload.suggestedArtifacts || [],

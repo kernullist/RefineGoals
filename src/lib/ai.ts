@@ -116,6 +116,9 @@ export function buildSystemPrompt(): string {
     "Separate confirmed decisions from assumptions. Put uncertain items in unknowns, not decisions.",
     "When asking about UX, dashboard layout, charting, visualization, navigation, or interaction choices, do not only ask an open-ended question.",
     "Instead, create concrete selectable UX options so the user can choose after seeing the tradeoffs.",
+    "If the user cannot choose between options or asks you to recommend, propose one clear default instead of staying neutral.",
+    "For recommendations, combine available search evidence, domain reasoning, implementation complexity, user workflow impact, and future extensibility.",
+    "Explain why the recommended option is best, when it would not be best, and what the second-best fallback is.",
     "Return strict JSON only. No markdown outside JSON.",
     "JSON shape:",
     "{",
@@ -149,6 +152,7 @@ export function buildSystemPrompt(): string {
     "When clarification is needed, assistantMessage should use this structure in Korean: 1. understood summary, 2. unclear/conflicting points, 3. questions to resolve them.",
     "Ask no more than five clarification questions at once. Prefer questions that unblock architecture, output format, target users, constraints, and success criteria.",
     "For UX choice questions, provide 2 to 4 suggestedChoices. Example for cppcheck dashboard visualization: A. issue-type chart plus trend, B. file risk heatmap, C. code-owner/action queue, D. hybrid executive overview.",
+    "When the user asks you to choose, mark the recommended suggestedChoice title clearly with '(추천)' and make its reply ready to accept the recommendation.",
     "Use the current state, attached image notes, and search evidence when present.",
     "Do not invent confirmed facts from search snippets. Mark uncertain items as assumptions.",
   ].join("\n");
