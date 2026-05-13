@@ -116,6 +116,22 @@ function useStoredProvider() {
   return [provider, setStoredProvider] as const;
 }
 
+function subscribeHydration(callback: () => void) {
+  const timeoutId = window.setTimeout(callback, 0);
+
+  return () => {
+    window.clearTimeout(timeoutId);
+  };
+}
+
+function useHydrated() {
+  return useSyncExternalStore(
+    subscribeHydration,
+    () => true,
+    () => false,
+  );
+}
+
 function metadataOf(message: Message) {
   try {
     return JSON.parse(message.metadata || "{}") as {
@@ -169,6 +185,7 @@ function ListBlock({
 }
 
 export default function Home() {
+  const hydrated = useHydrated();
   const [sessions, setSessions] = useState<Session[]>([]);
   const [activeId, setActiveId] = useState<string>("");
   const [input, setInput] = useState("");
@@ -311,6 +328,19 @@ export default function Home() {
   }
 
   const emptyState = !active || active.messages.length === 0;
+
+  if (!hydrated) {
+    return (
+      <main className="min-h-screen bg-slate-100 text-slate-950">
+        <div className="flex min-h-screen items-center justify-center bg-white">
+          <div className="flex items-center gap-3 rounded-lg border border-slate-200 bg-slate-50 px-4 py-3 text-sm font-medium text-slate-600 shadow-sm">
+            <Sparkles className="text-cyan-600" size={18} />
+            RefineGoals 준비 중...
+          </div>
+        </div>
+      </main>
+    );
+  }
 
   return (
     <main className="min-h-screen bg-slate-100 text-slate-950">
