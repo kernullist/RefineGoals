@@ -83,15 +83,53 @@ function parsePayload(content: string): ModelPayload {
   }
 }
 
-function fallbackAssistant(message: string, reason?: string): ModelPayload {
-  const state = createFallbackState(message);
+function isPlaceholderState(currentState: ReturnType<typeof toGoalState>) {
+  const rawIntent = currentState.rawIntent.trim();
+  return rawIntent === "" || rawIntent === "새 목표";
+}
+
+function fallbackAssistant(
+  currentState: ReturnType<typeof toGoalState>,
+  message: string,
+  reason?: string,
+): ModelPayload {
+  const fallbackState = createFallbackState(message);
+  const goalState: Record<string, unknown> = {};
+  const shouldSeedState = isPlaceholderState(currentState);
+
+  if (shouldSeedState) {
+    goalState.title = fallbackState.title;
+    goalState.rawIntent = fallbackState.rawIntent;
+    goalState.domain = fallbackState.domain;
+    goalState.targetUsers = fallbackState.targetUsers;
+    goalState.outputType = fallbackState.outputType;
+    goalState.completenessScore = Math.max(
+      currentState.completenessScore,
+      fallbackState.completenessScore || currentState.completenessScore,
+    );
+
+    if (currentState.unknowns.length === 0 && fallbackState.unknowns?.length) {
+      goalState.unknowns = fallbackState.unknowns;
+    }
+
+    if (currentState.risks.length === 0 && fallbackState.risks?.length) {
+      goalState.risks = fallbackState.risks;
+    }
+  }
+
   const suffix = reason ? `\n\n실패 원인: ${reason}` : "";
+  const fallbackSummary = shouldSeedState
+    ? "로컬 규칙으로 목표 초안을 임시 생성했습니다."
+    : "기존 목표 상태를 보존하고 로컬 규칙으로 다음 확인 질문만 제안했습니다.";
 
   return {
     assistantMessage:
-      `모델 응답을 가져오지 못해서 로컬 규칙으로 목표 초안을 임시 생성했습니다. 제공자, 모델명, 검색 API 응답, 네트워크 상태를 확인해 주세요.${suffix}`,
-    goalState: state as Record<string, unknown>,
-    nextQuestions: state.unknowns as string[],
+      `모델 응답을 가져오지 못해서 ${fallbackSummary} 제공자, 모델명, 검색 API 응답, 네트워크 상태를 확인해 주세요.${suffix}`,
+    goalState,
+    nextQuestions:
+      currentState.unknowns.length > 0
+        ? currentState.unknowns.slice(0, 1)
+        : ["목표를 구체화하기 위해 가장 먼저 확정해야 할 기준은 무엇인가요?"],
     suggestedArtifacts: [
       "Goal Brief",
       "Requirements",
@@ -99,6 +137,32 @@ function fallbackAssistant(message: string, reason?: string): ModelPayload {
       "AI Implementation Prompt",
     ],
   };
+}
+
+function serializeListOrExisting(value: unknown, existing: string): string {
+  if (!Array.isArray(value)) {
+    return existing;
+  }
+
+  return serializeList(value);
+}
+
+function stringOrExisting(value: unknown, existing: string): string {
+  if (typeof value !== "string") {
+    return existing;
+  }
+
+  const trimmed = value.trim();
+  return trimmed || existing;
+}
+
+function scoreOrExisting(value: unknown, existing: number): number {
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric)) {
+    return existing;
+  }
+
+  return Math.max(0, Math.min(100, Math.round(numeric)));
 }
 
 async function enrichChoiceImages(
@@ -190,26 +254,35 @@ export async function POST(request: Request) {
     providerUsed = result.providerUsed;
   } catch (error) {
     const reason = error instanceof Error ? error.message : "Unknown model error";
-    payload = fallbackAssistant(input.message, reason);
+    payload = fallbackAssistant(currentState, input.message, reason);
     providerUsed = "fallback";
     console.error(error);
   }
 
   const goalState = payload.goalState || {};
   const updated = db.updateSession(session.id, {
-    title: String(goalState.title || session.title),
-    rawIntent: String(goalState.rawIntent || session.rawIntent),
-    domain: String(goalState.domain || session.domain),
-    targetUsers: String(goalState.targetUsers || session.targetUsers),
-    constraints: serializeList(goalState.constraints),
-    references: serializeList(goalState.references),
-    mustHaveFeatures: serializeList(goalState.mustHaveFeatures),
-    niceToHaveFeatures: serializeList(goalState.niceToHaveFeatures),
-    risks: serializeList(goalState.risks),
-    unknowns: serializeList(goalState.unknowns),
-    decisions: serializeList(goalState.decisions),
-    outputType: String(goalState.outputType || "dashboard"),
-    completenessScore: Number(goalState.completenessScore || 10),
+    title: stringOrExisting(goalState.title, session.title),
+    rawIntent: stringOrExisting(goalState.rawIntent, session.rawIntent),
+    domain: stringOrExisting(goalState.domain, session.domain),
+    targetUsers: stringOrExisting(goalState.targetUsers, session.targetUsers),
+    constraints: serializeListOrExisting(goalState.constraints, session.constraints),
+    references: serializeListOrExisting(goalState.references, session.references),
+    mustHaveFeatures: serializeListOrExisting(
+      goalState.mustHaveFeatures,
+      session.mustHaveFeatures,
+    ),
+    niceToHaveFeatures: serializeListOrExisting(
+      goalState.niceToHaveFeatures,
+      session.niceToHaveFeatures,
+    ),
+    risks: serializeListOrExisting(goalState.risks, session.risks),
+    unknowns: serializeListOrExisting(goalState.unknowns, session.unknowns),
+    decisions: serializeListOrExisting(goalState.decisions, session.decisions),
+    outputType: stringOrExisting(goalState.outputType, session.outputType),
+    completenessScore: scoreOrExisting(
+      goalState.completenessScore,
+      session.completenessScore,
+    ),
   });
 
   const updatedState = toGoalState(updated);

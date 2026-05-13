@@ -161,6 +161,31 @@ function metadataOf(message: Message) {
   }
 }
 
+function createEmptySession(id: string, message: string): Session {
+  const compact = message.replace(/\s+/g, " ").trim();
+  const title = compact.length > 32 ? `${compact.slice(0, 32)}...` : compact;
+
+  return {
+    id,
+    title: title || "새 목표",
+    rawIntent: compact,
+    domain: "unknown",
+    targetUsers: "",
+    constraints: [],
+    references: [],
+    mustHaveFeatures: [],
+    niceToHaveFeatures: [],
+    risks: [],
+    unknowns: [],
+    decisions: [],
+    outputType: "dashboard",
+    completenessScore: 0,
+    messages: [],
+    attachments: [],
+    documents: [],
+  };
+}
+
 function Pill({ children }: { children: React.ReactNode }) {
   return (
     <span className="inline-flex min-h-7 items-center rounded-md border border-slate-200 bg-white px-2.5 text-xs font-medium text-slate-700 shadow-sm">
@@ -263,6 +288,7 @@ export default function Home() {
   const [useSearch, setUseSearch] = useState(true);
   const [loading, setLoading] = useState(false);
   const [uploading, setUploading] = useState(false);
+  const [uploadError, setUploadError] = useState("");
   const [pendingExchange, setPendingExchange] = useState<PendingExchange | null>(
     null,
   );
@@ -357,7 +383,16 @@ export default function Home() {
     setLoading(true);
     setInput("");
 
-    const targetSessionId = active?.id || "new-session";
+    const targetSessionId = active?.id || `pending-session-${Date.now()}`;
+    const isTemporarySession = !active;
+    if (isTemporarySession) {
+      setSessions((current) => [
+        createEmptySession(targetSessionId, message),
+        ...current,
+      ]);
+      setActiveId(targetSessionId);
+    }
+
     setPendingExchange({
       sessionId: targetSessionId,
       user: {
@@ -380,33 +415,65 @@ export default function Home() {
     });
     requestAnimationFrame(() => scrollMessagesToBottom("smooth"));
 
-    const response = await fetch("/api/chat", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        sessionId: active?.id,
-        message,
-        provider,
-        useSearch,
-      }),
-    });
+    try {
+      const response = await fetch("/api/chat", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          sessionId: active?.id,
+          message,
+          provider,
+          useSearch,
+        }),
+      });
 
-    const data = (await response.json()) as { session: Session };
-    setSessions((current) => {
-      const exists = current.some((session) => session.id === data.session.id);
-      if (!exists) {
-        return [data.session, ...current];
+      if (!response.ok) {
+        throw new Error(`Chat request failed: ${response.status}`);
       }
 
-      return current.map((session) =>
-        session.id === data.session.id ? data.session : session,
-      );
-    });
-    setActiveId(data.session.id);
-    setPendingExchange(null);
-    setLoading(false);
+      const data = (await response.json()) as { session: Session };
+      setSessions((current) => {
+        const withoutTemporary = current.filter(
+          (session) => session.id !== targetSessionId,
+        );
+        const exists = withoutTemporary.some(
+          (session) => session.id === data.session.id,
+        );
+        if (!exists) {
+          return [data.session, ...withoutTemporary];
+        }
+
+        return withoutTemporary.map((session) =>
+          session.id === data.session.id ? data.session : session,
+        );
+      });
+      setActiveId(data.session.id);
+      setPendingExchange(null);
+    } catch (error) {
+      const reason =
+        error instanceof Error ? error.message : "Unknown client request error";
+      setPendingExchange((current) => {
+        if (!current || current.sessionId !== targetSessionId) {
+          return current;
+        }
+
+        return {
+          ...current,
+          assistant: {
+            ...current.assistant,
+            content: `요청을 완료하지 못했습니다.\n\n실패 원인: ${reason}`,
+            metadata: JSON.stringify({
+              providerUsed: "client",
+              pending: false,
+            }),
+          },
+        };
+      });
+    } finally {
+      setLoading(false);
+    }
   }
 
   async function createSession() {
@@ -457,17 +524,36 @@ export default function Home() {
     }
 
     setUploading(true);
-    const form = new FormData();
-    form.append("sessionId", active.id);
-    form.append("purpose", "UI/design, product/function, mood/style reference");
-    form.append("file", file);
+    setUploadError("");
+    try {
+      const form = new FormData();
+      form.append("sessionId", active.id);
+      form.append("purpose", "UI/design, product/function, mood/style reference");
+      form.append("file", file);
 
-    await fetch("/api/upload", {
-      method: "POST",
-      body: form,
-    });
-    await refreshSession(active.id);
-    setUploading(false);
+      const response = await fetch("/api/upload", {
+        method: "POST",
+        body: form,
+      });
+
+      if (!response.ok) {
+        const body = (await response.json().catch(() => null)) as {
+          error?: string;
+        } | null;
+        throw new Error(body?.error || `Upload failed: ${response.status}`);
+      }
+
+      await refreshSession(active.id);
+    } catch (error) {
+      const reason =
+        error instanceof Error ? error.message : "Unknown upload error";
+      setUploadError(reason);
+    } finally {
+      if (fileInputRef.current) {
+        fileInputRef.current.value = "";
+      }
+      setUploading(false);
+    }
   }
 
   function downloadDocument(document: Document) {
@@ -482,7 +568,7 @@ export default function Home() {
     URL.revokeObjectURL(url);
   }
 
-  const emptyState = !active || active.messages.length === 0;
+  const emptyState = visibleMessages.length === 0;
 
   if (!hydrated) {
     return (
@@ -775,6 +861,11 @@ export default function Home() {
                   보내기
                 </button>
               </div>
+              {uploadError ? (
+                <div className="px-2 pt-2 text-xs leading-5 text-red-600">
+                  {uploadError}
+                </div>
+              ) : null}
             </div>
           </form>
         </section>

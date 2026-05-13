@@ -27,6 +27,7 @@ RefineGoals is a local-first web tool for turning vague goals into concrete, AI-
   - Ollama OpenAI-compatible endpoint
 - Tavily search provider hook
 - Local image upload for UI/design, product/function, and mood/style references
+- Image uploads are local-only, limited to image MIME types, and capped at 10MB per file
 - Dashboard document generation:
   - Goal Brief
   - Requirements
@@ -116,5 +117,7 @@ Document quality bar:
 - unresolved unknowns stay visible instead of being silently guessed
 - implementation modules and data/API contracts are explicit
 - failure behavior and privacy/security notes are included
+- model fallback preserves existing goal-state fields unless explicit replacements are returned
+- placeholder sessions can still be seeded from the first real user message if provider fallback is used
 - test matrix and final implementation checklist are included
 - a coding AI can use the generated handoff docs without needing the chat transcript

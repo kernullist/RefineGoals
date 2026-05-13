@@ -171,6 +171,8 @@ ${list(state.decisions)}
 - Model provider missing key: show provider-specific configuration error and keep the session usable.
 - Model response is not strict JSON: extract JSON if possible; otherwise use the text as assistant content.
 - Model/search timeout: keep pending UI visible until server returns; if a fallback is used, include the failure reason.
+- Model/provider fallback must preserve existing goal-state fields unless the model explicitly returned replacements.
+- Placeholder sessions should be seeded from the first real user message even when provider fallback is used.
 - Image reference search fails: render a wireframe-style visual hint instead of blocking the response.
 - Session deletion fails: leave the item in the list and avoid destructive local state changes.
 - Upload fails: keep the session intact and surface a recoverable error.
@@ -180,6 +182,7 @@ ${list(state.decisions)}
 - Do not commit .env, local DB files, uploads, or generated private data.
 - API keys must stay server-side and must never be exposed in client-rendered metadata.
 - Uploaded images may contain sensitive product or design information; keep paths local unless cloud storage is explicitly added.
+- Uploads must be image MIME types and should be capped to a product-defined size limit.
 - Search snippets and image URLs are external evidence, not verified facts.
 
 ## Implementation Constraints
@@ -272,6 +275,8 @@ ${numbered([
 - If UX choices are needed, provide selectable options with visual references or wireframe-style hints.
 - Keep confirmed decisions separate from unknowns.
 - Do not overwrite unrelated goal-state fields just because the model response omitted them.
+- Preserve existing goal-state arrays and scalar fields when a model response omits them.
+- Preserve populated sessions during fallback, but treat a placeholder "new goal" session as seedable from the first real user message.
 
 ## Constraints
 ${list(state.constraints)}
