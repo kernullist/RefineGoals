@@ -204,6 +204,7 @@ export default function Home() {
     null,
   );
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const messagesRef = useRef<HTMLDivElement>(null);
   const endRef = useRef<HTMLDivElement>(null);
 
   const active = useMemo(
@@ -237,12 +238,35 @@ export default function Home() {
     void load();
   }, []);
 
-  useEffect(() => {
-    endRef.current?.scrollIntoView({
-      behavior: "smooth",
-      block: "end",
+  function isNearMessageBottom() {
+    const element = messagesRef.current;
+    if (!element) {
+      return true;
+    }
+
+    const distanceFromBottom =
+      element.scrollHeight - element.scrollTop - element.clientHeight;
+
+    return distanceFromBottom < 160;
+  }
+
+  function scrollMessagesToBottom(behavior: ScrollBehavior = "smooth") {
+    const element = messagesRef.current;
+    if (!element) {
+      return;
+    }
+
+    element.scrollTo({
+      top: element.scrollHeight,
+      behavior,
     });
-  }, [active?.messages.length]);
+  }
+
+  useEffect(() => {
+    if (isNearMessageBottom()) {
+      scrollMessagesToBottom("auto");
+    }
+  }, [visibleMessages.length]);
 
   async function refreshSession(sessionId: string) {
     const response = await fetch(`/api/sessions/${sessionId}`);
@@ -291,6 +315,7 @@ export default function Home() {
         createdAt: new Date().toISOString(),
       },
     });
+    requestAnimationFrame(() => scrollMessagesToBottom("smooth"));
 
     const response = await fetch("/api/chat", {
       method: "POST",
@@ -502,7 +527,7 @@ export default function Home() {
             </div>
           </header>
 
-          <div className="flex-1 overflow-y-auto px-5 py-6">
+          <div className="flex-1 overflow-y-auto px-5 py-6" ref={messagesRef}>
             {emptyState ? (
               <div className="mx-auto flex max-w-2xl flex-col items-center justify-center py-24 text-center">
                 <div className="mb-6 flex h-16 w-16 items-center justify-center rounded-lg bg-slate-950 text-cyan-300">
