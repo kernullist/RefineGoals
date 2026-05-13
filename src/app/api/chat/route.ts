@@ -28,6 +28,12 @@ type ModelPayload = {
   assistantMessage?: string;
   goalState?: Record<string, unknown>;
   nextQuestions?: string[];
+  suggestedChoices?: Array<{
+    title?: string;
+    description?: string;
+    tradeoff?: string;
+    reply?: string;
+  }>;
   suggestedArtifacts?: string[];
 };
 
@@ -191,6 +197,7 @@ export async function POST(request: Request) {
       providerUsed,
       searchResults,
       nextQuestions,
+      suggestedChoices: payload.suggestedChoices || [],
       suggestedArtifacts: payload.suggestedArtifacts || [],
     }),
   });

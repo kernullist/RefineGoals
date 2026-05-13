@@ -144,6 +144,12 @@ function metadataOf(message: Message) {
     return JSON.parse(message.metadata || "{}") as {
       providerUsed?: string;
       nextQuestions?: string[];
+      suggestedChoices?: Array<{
+        title?: string;
+        description?: string;
+        tradeoff?: string;
+        reply?: string;
+      }>;
       suggestedArtifacts?: string[];
     };
   } catch {
@@ -580,6 +586,38 @@ export default function Home() {
                             <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-slate-400" />
                             <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-slate-400 [animation-delay:120ms]" />
                             <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-slate-400 [animation-delay:240ms]" />
+                          </div>
+                        ) : null}
+                        {meta.suggestedChoices &&
+                        meta.suggestedChoices.length > 0 ? (
+                          <div className="mt-3 grid gap-2 border-t border-slate-200 pt-3">
+                            {meta.suggestedChoices.map((choice, index) => (
+                              <button
+                                className="rounded-md border border-slate-200 bg-white px-3 py-2 text-left hover:border-cyan-300 hover:bg-cyan-50"
+                                key={`${choice.title || "choice"}-${index}`}
+                                onClick={() =>
+                                  setInput(
+                                    choice.reply ||
+                                      `${choice.title}: ${choice.description}`,
+                                  )
+                                }
+                                type="button"
+                              >
+                                <div className="text-xs font-semibold text-slate-900">
+                                  {choice.title || `옵션 ${index + 1}`}
+                                </div>
+                                {choice.description ? (
+                                  <div className="mt-1 text-xs leading-5 text-slate-600">
+                                    {choice.description}
+                                  </div>
+                                ) : null}
+                                {choice.tradeoff ? (
+                                  <div className="mt-1 text-xs leading-5 text-cyan-700">
+                                    {choice.tradeoff}
+                                  </div>
+                                ) : null}
+                              </button>
+                            ))}
                           </div>
                         ) : null}
                         {meta.nextQuestions && meta.nextQuestions.length > 0 ? (
