@@ -166,6 +166,52 @@ function scoreOrExisting(value: unknown, existing: number): number {
   return Math.max(0, Math.min(100, Math.round(numeric)));
 }
 
+function questionFromUnknown(unknown: string, completenessScore: number) {
+  const normalized = unknown.replace(/\s+/g, " ").trim();
+  const prefix =
+    completenessScore >= 85
+      ? "구현 준비 상태를 더 확실하게 만들기 위해"
+      : "목표를 더 구체화하기 위해";
+
+  if (!normalized) {
+    return `${prefix} 다음으로 확정해야 할 기준은 무엇인가요?`;
+  }
+
+  if (/[?？]$/.test(normalized)) {
+    return normalized;
+  }
+
+  return `${prefix} '${normalized}'을 어떻게 정하면 좋을까요? 원하시면 추천 기본안을 제시해드릴게요.`;
+}
+
+function nextQuestionsOrOpenUnknowns(
+  payloadQuestions: string[] | undefined,
+  state: ReturnType<typeof toGoalState>,
+) {
+  const modelQuestions = (payloadQuestions || [])
+    .map((question) => question.trim())
+    .filter(Boolean)
+    .slice(0, 1);
+
+  if (modelQuestions.length > 0) {
+    return modelQuestions;
+  }
+
+  const openUnknown = state.unknowns.find((unknown) => unknown.trim());
+  return openUnknown
+    ? [questionFromUnknown(openUnknown, state.completenessScore)]
+    : [];
+}
+
+function hasQuestionLikeText(message: string) {
+  return (
+    /[?？]/.test(message) ||
+    /(인가요|할까요|하실까요|될까요|있나요|없나요|원하시나요|괜찮으신가요)(?:[.\s]|$)/.test(
+      message,
+    )
+  );
+}
+
 async function enrichChoiceImages(
   choices: NonNullable<ModelPayload["suggestedChoices"]>,
 ) {
@@ -300,15 +346,17 @@ export async function POST(request: Request) {
     });
   });
 
-  const nextQuestions = (payload.nextQuestions || []).slice(0, 1);
+  const nextQuestions = nextQuestionsOrOpenUnknowns(
+    payload.nextQuestions,
+    updatedState,
+  );
   const suggestedChoices = await enrichChoiceImages(
     payload.suggestedChoices || [],
   );
   const assistantMessageBase =
     payload.assistantMessage ||
     "목표 상태를 업데이트했습니다. 오른쪽 패널에서 결정사항과 빈틈을 확인할 수 있습니다.";
-  const alreadyHasQuestions =
-    assistantMessageBase.includes("질문") || assistantMessageBase.includes("?");
+  const alreadyHasQuestions = hasQuestionLikeText(assistantMessageBase);
   const assistantMessage =
     nextQuestions.length > 0 &&
     !alreadyHasQuestions &&

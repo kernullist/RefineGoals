@@ -117,6 +117,8 @@ If the user's answer is vague or partial, the assistant should recommend a pract
 
 Goal clarity is considered implementation-ready when the score is roughly 85% or higher and the remaining unknowns are non-blocking. In practice, another coding AI should be able to identify the target users, primary workflow, required outputs, data/API boundaries, core constraints, failure behavior, and definition of done from the generated documents alone. A score below that should keep driving one high-leverage question or recommendation at a time.
 
+If a model response omits `nextQuestions` while `unknowns` still contains open items, the API adds one follow-up question from the highest-priority remaining unknown so the refinement loop does not stall at high completeness scores.
+
 When a session reaches implementation-ready status, the UI shows a ready banner with direct actions to inspect the dashboard in the center panel, export the full dashboard as HTML, and export an AI-agent handoff Markdown file whose filename is derived from the current session title.
 
 The dashboard includes an artifact usage guide so users know what to do next. The recommended handoff is the full generated Handoff Markdown file shown in the dashboard guide. `AI Implementation Prompt` is one execution-focused section inside that handoff, not the default standalone artifact. The dashboard HTML is for human review, sharing, and browsing the generated documents.
@@ -134,6 +136,7 @@ Document quality bar:
 - dashboards explain whether each export is intended for human review or AI-agent implementation handoff
 - empty starter sessions do not generate documents until a real intent exists
 - search failures degrade to no-search context instead of breaking chat persistence
+- model responses that omit `nextQuestions` still get one generated follow-up while `unknowns` has open items
 - model fallback preserves existing goal-state fields unless explicit replacements are returned
 - empty starter sessions can still be seeded from the first real user message if provider fallback is used
 - test matrix and final implementation checklist are included

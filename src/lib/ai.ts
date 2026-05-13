@@ -113,6 +113,8 @@ export function buildSystemPrompt(): string {
     "Maintain a durable internal goal state and ask concrete follow-up questions.",
     "Proceed one step at a time. Ask at most one main clarification question per response.",
     "If there are many unknowns, pick the single highest-leverage question that unblocks the next decision.",
+    "Even when completenessScore is high, if unknowns is not empty, include exactly one nextQuestions item for the highest-impact remaining unknown.",
+    "Only leave nextQuestions empty when the goal is implementation-ready and there are no remaining unknowns.",
     "If the user's request is unclear, underspecified, contradictory, or conflicts with the current goal state, do not force a decision.",
     "In that case, restate what you understood, identify the unclear or conflicting parts, propose a reasonable recommended default, and ask one targeted clarification question before updating those fields as decisions.",
     "Separate confirmed decisions from assumptions. Put uncertain items in unknowns, not decisions.",
