@@ -12,6 +12,7 @@ import {
   Settings2,
   Sparkles,
   Target,
+  Trash2,
 } from "lucide-react";
 import {
   FormEvent,
@@ -296,6 +297,25 @@ export default function Home() {
     setActiveId(data.session.id);
   }
 
+  async function deleteSession(sessionId: string) {
+    const response = await fetch(`/api/sessions/${sessionId}`, {
+      method: "DELETE",
+    });
+
+    if (!response.ok) {
+      return;
+    }
+
+    setSessions((current) => {
+      const remaining = current.filter((session) => session.id !== sessionId);
+      if (activeId === sessionId) {
+        setActiveId(remaining[0]?.id || "");
+      }
+
+      return remaining;
+    });
+  }
+
   async function uploadFile(file: File) {
     if (!active) {
       return;
@@ -377,24 +397,43 @@ export default function Home() {
               </button>
             ) : (
               sessions.map((session) => (
-                <button
-                  className={`w-full rounded-md px-3 py-3 text-left transition ${
+                <div
+                  className={`group flex w-full items-start gap-2 rounded-md px-3 py-3 transition ${
                     active?.id === session.id
                       ? "bg-white text-slate-950"
                       : "text-slate-300 hover:bg-white/10"
                   }`}
                   key={session.id}
-                  onClick={() => setActiveId(session.id)}
-                  type="button"
                 >
-                  <div className="line-clamp-1 text-sm font-semibold">
-                    {session.title}
-                  </div>
-                  <div className="mt-1 flex items-center gap-2 text-xs opacity-70">
-                    <span>{session.domain}</span>
-                    <span>{session.completenessScore}%</span>
-                  </div>
-                </button>
+                  <button
+                    className="min-w-0 flex-1 text-left"
+                    onClick={() => setActiveId(session.id)}
+                    type="button"
+                  >
+                    <div className="line-clamp-1 text-sm font-semibold">
+                      {session.title}
+                    </div>
+                    <div className="mt-1 flex items-center gap-2 text-xs opacity-70">
+                      <span>{session.domain}</span>
+                      <span>{session.completenessScore}%</span>
+                    </div>
+                  </button>
+                  <button
+                    aria-label={`${session.title} 삭제`}
+                    className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-md border opacity-0 transition group-hover:opacity-100 focus:opacity-100 ${
+                      active?.id === session.id
+                        ? "border-slate-200 text-slate-500 hover:bg-slate-100 hover:text-red-600"
+                        : "border-white/10 text-slate-400 hover:bg-white/10 hover:text-red-300"
+                    }`}
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      void deleteSession(session.id);
+                    }}
+                    type="button"
+                  >
+                    <Trash2 size={15} />
+                  </button>
+                </div>
               ))
             )}
           </div>

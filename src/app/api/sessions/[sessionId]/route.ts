@@ -28,3 +28,19 @@ export async function GET(
     },
   });
 }
+
+export async function DELETE(
+  _request: Request,
+  context: { params: Promise<{ sessionId: string }> },
+) {
+  const { sessionId } = await context.params;
+  const deleted = db.deleteSession(sessionId);
+
+  if (!deleted) {
+    return NextResponse.json({ error: "Session not found." }, { status: 404 });
+  }
+
+  return NextResponse.json({
+    ok: true,
+  });
+}

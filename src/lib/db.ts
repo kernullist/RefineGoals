@@ -250,6 +250,14 @@ export const db = {
     return this.getSession(id) as DbSession;
   },
 
+  deleteSession(id: string): boolean {
+    const result = getDb()
+      .prepare("DELETE FROM goal_sessions WHERE id = ?")
+      .run(id);
+
+    return result.changes > 0;
+  },
+
   createMessage(input: {
     sessionId: string;
     role: string;
