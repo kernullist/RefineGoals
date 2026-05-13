@@ -33,6 +33,12 @@ type Message = {
   createdAt: string;
 };
 
+type PendingExchange = {
+  sessionId: string;
+  user: Message;
+  assistant: Message;
+};
+
 type Attachment = {
   id: string;
   fileName: string;
@@ -194,6 +200,9 @@ export default function Home() {
   const [useSearch, setUseSearch] = useState(true);
   const [loading, setLoading] = useState(false);
   const [uploading, setUploading] = useState(false);
+  const [pendingExchange, setPendingExchange] = useState<PendingExchange | null>(
+    null,
+  );
   const fileInputRef = useRef<HTMLInputElement>(null);
   const endRef = useRef<HTMLDivElement>(null);
 
@@ -201,6 +210,21 @@ export default function Home() {
     () => sessions.find((session) => session.id === activeId) || sessions[0],
     [sessions, activeId],
   );
+  const visibleMessages = useMemo(() => {
+    if (!active) {
+      return [];
+    }
+
+    if (pendingExchange?.sessionId !== active.id) {
+      return active.messages;
+    }
+
+    return [
+      ...active.messages,
+      pendingExchange.user,
+      pendingExchange.assistant,
+    ];
+  }, [active, pendingExchange]);
 
   useEffect(() => {
     async function load() {
@@ -246,6 +270,28 @@ export default function Home() {
     setLoading(true);
     setInput("");
 
+    const targetSessionId = active?.id || "new-session";
+    setPendingExchange({
+      sessionId: targetSessionId,
+      user: {
+        id: `pending-user-${Date.now()}`,
+        role: "user",
+        content: message,
+        metadata: "{}",
+        createdAt: new Date().toISOString(),
+      },
+      assistant: {
+        id: `pending-assistant-${Date.now()}`,
+        role: "assistant",
+        content: "모델이 목표 상태를 정리하는 중입니다...",
+        metadata: JSON.stringify({
+          providerUsed: providerLabels[provider],
+          pending: true,
+        }),
+        createdAt: new Date().toISOString(),
+      },
+    });
+
     const response = await fetch("/api/chat", {
       method: "POST",
       headers: {
@@ -271,6 +317,7 @@ export default function Home() {
       );
     });
     setActiveId(data.session.id);
+    setPendingExchange(null);
     setLoading(false);
   }
 
@@ -472,8 +519,11 @@ export default function Home() {
               </div>
             ) : (
               <div className="mx-auto max-w-3xl space-y-5">
-                {active.messages.map((message) => {
+                {visibleMessages.map((message) => {
                   const meta = metadataOf(message);
+                  const isPending = Boolean(
+                    (meta as { pending?: boolean }).pending,
+                  );
 
                   return (
                     <div
@@ -491,11 +541,22 @@ export default function Home() {
                       >
                         {message.role !== "user" ? (
                           <div className="mb-2 flex items-center gap-2 text-xs font-semibold text-slate-500">
-                            <Bot size={15} />
+                            {isPending ? (
+                              <Loader2 className="animate-spin" size={15} />
+                            ) : (
+                              <Bot size={15} />
+                            )}
                             <span>{meta.providerUsed || "assistant"}</span>
                           </div>
                         ) : null}
                         <p className="whitespace-pre-wrap">{message.content}</p>
+                        {isPending ? (
+                          <div className="mt-3 flex gap-1">
+                            <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-slate-400" />
+                            <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-slate-400 [animation-delay:120ms]" />
+                            <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-slate-400 [animation-delay:240ms]" />
+                          </div>
+                        ) : null}
                         {meta.nextQuestions && meta.nextQuestions.length > 0 ? (
                           <div className="mt-3 space-y-1 border-t border-slate-200 pt-3">
                             {meta.nextQuestions.map((question) => (
@@ -514,14 +575,6 @@ export default function Home() {
                     </div>
                   );
                 })}
-                {loading ? (
-                  <div className="flex justify-start">
-                    <div className="flex items-center gap-2 rounded-lg border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-500">
-                      <Loader2 className="animate-spin" size={16} />
-                      목표 상태를 갱신하는 중...
-                    </div>
-                  </div>
-                ) : null}
                 <div ref={endRef} />
               </div>
             )}
@@ -533,9 +586,14 @@ export default function Home() {
           >
             <div className="mx-auto max-w-3xl rounded-lg border border-slate-200 bg-slate-50 p-2 shadow-sm">
               <textarea
-                className="min-h-24 w-full resize-none bg-transparent px-3 py-2 text-sm leading-6 outline-none placeholder:text-slate-400"
+                className="min-h-24 w-full resize-none bg-transparent px-3 py-2 text-sm leading-6 outline-none placeholder:text-slate-400 disabled:cursor-not-allowed disabled:opacity-60"
+                disabled={loading}
                 onChange={(event) => setInput(event.target.value)}
-                placeholder="목표, 참고한 제품, 만들고 싶은 산출물, 제약 조건을 적어주세요."
+                placeholder={
+                  loading
+                    ? "모델 응답을 기다리는 중입니다."
+                    : "목표, 참고한 제품, 만들고 싶은 산출물, 제약 조건을 적어주세요."
+                }
                 value={input}
               />
               <div className="flex flex-wrap items-center justify-between gap-2 border-t border-slate-200 px-2 pt-2">
