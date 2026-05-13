@@ -1,6 +1,6 @@
 import { GoalState } from "@/lib/goal-state";
 
-export type ProviderId = "openrouter" | "lmstudio" | "ollama";
+export type ProviderId = "openrouter" | "deepseek" | "lmstudio" | "ollama";
 
 export type ChatInput = {
   provider: ProviderId;
@@ -28,6 +28,11 @@ const providerConfig: Record<
     apiKey: process.env.OPENROUTER_API_KEY,
     model: process.env.OPENROUTER_MODEL || "openai/gpt-4.1-mini",
   },
+  deepseek: {
+    baseUrl: process.env.DEEPSEEK_BASE_URL || "https://api.deepseek.com/v1",
+    apiKey: process.env.DEEPSEEK_API_KEY,
+    model: process.env.DEEPSEEK_MODEL || "deepseek-chat",
+  },
   lmstudio: {
     baseUrl: process.env.LOCAL_LLM_BASE_URL || "http://localhost:1234/v1",
     model: process.env.LOCAL_LLM_MODEL || "local-model",
@@ -43,6 +48,10 @@ export async function callModel(input: ChatInput): Promise<ModelResult> {
 
   if (input.provider === "openrouter" && !config.apiKey) {
     throw new Error("OPENROUTER_API_KEY is not configured.");
+  }
+
+  if (input.provider === "deepseek" && !config.apiKey) {
+    throw new Error("DEEPSEEK_API_KEY is not configured.");
   }
 
   const response = await fetch(`${config.baseUrl}/chat/completions`, {

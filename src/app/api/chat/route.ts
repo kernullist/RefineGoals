@@ -18,7 +18,9 @@ import { searchWeb, summarizeSearch } from "@/lib/search";
 const chatSchema = z.object({
   sessionId: z.string().optional(),
   message: z.string().min(1),
-  provider: z.enum(["openrouter", "lmstudio", "ollama"]).default("openrouter"),
+  provider: z
+    .enum(["openrouter", "deepseek", "lmstudio", "ollama"])
+    .default("openrouter"),
   useSearch: z.boolean().default(false),
 });
 

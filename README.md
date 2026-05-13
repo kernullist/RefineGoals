@@ -21,6 +21,7 @@ RefineGoals is a local-first web tool for turning vague goals into concrete, AI-
   - completeness score
 - Provider abstraction for:
   - OpenRouter
+  - DeepSeek
   - LM Studio OpenAI-compatible endpoint
   - Ollama OpenAI-compatible endpoint
 - Tavily search provider hook
@@ -53,6 +54,9 @@ Edit `.env`:
 ```text
 OPENROUTER_API_KEY=""
 OPENROUTER_MODEL="openai/gpt-4.1-mini"
+DEEPSEEK_API_KEY=""
+DEEPSEEK_BASE_URL="https://api.deepseek.com/v1"
+DEEPSEEK_MODEL="deepseek-chat"
 LOCAL_LLM_BASE_URL="http://localhost:1234/v1"
 LOCAL_LLM_MODEL="local-model"
 OLLAMA_BASE_URL="http://localhost:11434/v1"
@@ -60,7 +64,16 @@ OLLAMA_MODEL="llama3.1"
 TAVILY_API_KEY=""
 ```
 
-OpenRouter requires `OPENROUTER_API_KEY`. LM Studio and Ollama are called through their OpenAI-compatible `/v1/chat/completions` endpoints.
+OpenRouter requires `OPENROUTER_API_KEY`. DeepSeek requires `DEEPSEEK_API_KEY`. LM Studio and Ollama are called through their OpenAI-compatible `/v1/chat/completions` endpoints.
+
+Provider selection is explicit. If multiple providers and models are configured in `.env`, the app uses the provider currently selected in the chat composer. The selected provider then uses only its matching model variable:
+
+- `OpenRouter` uses `OPENROUTER_MODEL`
+- `DeepSeek` uses `DEEPSEEK_MODEL`
+- `LM Studio` uses `LOCAL_LLM_MODEL`
+- `Ollama` uses `OLLAMA_MODEL`
+
+There is no automatic priority or fallback between configured providers yet. If the selected provider fails, the MVP falls back to the local rule-based draft so the session and dashboard still update.
 
 If no provider key or local model is available, the app still creates a fallback local goal draft so the UI and persistence flow remain usable.
 

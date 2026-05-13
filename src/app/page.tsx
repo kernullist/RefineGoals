@@ -15,7 +15,7 @@ import {
 } from "lucide-react";
 import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 
-type ProviderId = "openrouter" | "lmstudio" | "ollama";
+type ProviderId = "openrouter" | "deepseek" | "lmstudio" | "ollama";
 
 type Message = {
   id: string;
@@ -62,6 +62,7 @@ type Session = {
 
 const providerLabels: Record<ProviderId, string> = {
   openrouter: "OpenRouter",
+  deepseek: "DeepSeek",
   lmstudio: "LM Studio",
   ollama: "Ollama",
 };
