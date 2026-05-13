@@ -105,3 +105,5 @@ The assistant should not force uncertain user input into confirmed decisions. If
 If the user cannot choose between options or asks for a recommendation, the assistant should actively recommend one default. For recommendation-style messages, the API also enables search automatically even when the search toggle is off, then combines search evidence with implementation tradeoffs and product reasoning.
 
 For UX, dashboard, visualization, or interaction choices, the assistant should ask only one follow-up question at a time and provide concrete selectable options first. Each UX option can include a web image reference from Tavily image search or a generated wireframe-style visual hint when no suitable image is available.
+
+If the user's answer is vague or partial, the assistant should recommend a practical default, mark it as an assumption awaiting confirmation, and ask one question that lets the user accept or override the recommendation.

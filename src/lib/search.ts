@@ -54,20 +54,31 @@ export async function searchImages(query: string): Promise<ImageSearchResult[]> 
     return [];
   }
 
-  const response = await fetch("https://api.tavily.com/search", {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${apiKey}`,
-    },
-    body: JSON.stringify({
-      query,
-      search_depth: "basic",
-      include_answer: false,
-      include_images: true,
-      max_results: 3,
-    }),
-  });
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 6000);
+
+  let response: Response;
+  try {
+    response = await fetch("https://api.tavily.com/search", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${apiKey}`,
+      },
+      body: JSON.stringify({
+        query,
+        search_depth: "basic",
+        include_answer: false,
+        include_images: true,
+        max_results: 3,
+      }),
+      signal: controller.signal,
+    });
+  } catch {
+    return [];
+  } finally {
+    clearTimeout(timeoutId);
+  }
 
   if (!response.ok) {
     return [];
