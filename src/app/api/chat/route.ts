@@ -168,9 +168,20 @@ export async function POST(request: Request) {
     });
   });
 
-  const assistantMessage =
+  const nextQuestions = payload.nextQuestions || [];
+  const assistantMessageBase =
     payload.assistantMessage ||
     "목표 상태를 업데이트했습니다. 오른쪽 패널에서 결정사항과 빈틈을 확인할 수 있습니다.";
+  const alreadyHasQuestions =
+    assistantMessageBase.includes("질문") || assistantMessageBase.includes("?");
+  const assistantMessage =
+    nextQuestions.length > 0 &&
+    !alreadyHasQuestions &&
+    !nextQuestions.some((question) => assistantMessageBase.includes(question))
+      ? `${assistantMessageBase}\n\n확인 질문:\n${nextQuestions
+          .map((question, index) => `${index + 1}. ${question}`)
+          .join("\n")}`
+      : assistantMessageBase;
 
   db.createMessage({
     sessionId: session.id,
@@ -179,7 +190,7 @@ export async function POST(request: Request) {
     metadata: JSON.stringify({
       providerUsed,
       searchResults,
-      nextQuestions: payload.nextQuestions || [],
+      nextQuestions,
       suggestedArtifacts: payload.suggestedArtifacts || [],
     }),
   });

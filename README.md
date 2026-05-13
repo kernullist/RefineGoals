@@ -19,6 +19,7 @@ RefineGoals is a local-first web tool for turning vague goals into concrete, AI-
   - unknowns
   - decisions
   - completeness score
+- Clarification-first behavior when user requests are unclear, underspecified, contradictory, or conflict with the current goal state
 - Provider abstraction for:
   - OpenRouter
   - DeepSeek
@@ -90,3 +91,13 @@ npm run db:init
 ## Product Direction
 
 The MVP is intentionally local-first. The code keeps provider, search, storage, and document-generation boundaries separate so the project can later grow into a SaaS product with auth, team workspaces, cloud storage, and billing.
+
+## Goal Refinement Behavior
+
+The assistant should not force uncertain user input into confirmed decisions. If a request is ambiguous or conflicts with the current goal state, it should:
+
+- restate what it understood
+- identify unclear or conflicting points
+- ask targeted clarification questions
+- keep uncertain items in `unknowns`
+- only move confirmed answers into `decisions`
