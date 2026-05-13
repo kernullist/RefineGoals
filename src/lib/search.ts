@@ -55,7 +55,7 @@ export async function searchImages(query: string): Promise<ImageSearchResult[]> 
   }
 
   const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), 6000);
+  const timeoutId = setTimeout(() => controller.abort(), 20000);
 
   let response: Response;
   try {
