@@ -1,36 +1,77 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# RefineGoals
 
-## Getting Started
+RefineGoals is a local-first web tool for turning vague goals into concrete, AI-readable project dashboards. The MVP uses a ChatGPT-like conversation surface, a persistent goal-state panel, image reference uploads, Tavily search hooks, and Markdown dashboard documents.
 
-First, run the development server:
+## Current MVP
 
-```bash
+- Local-only Next.js app
+- SQLite persistence through a small local database layer
+- Chat sessions with stored messages
+- Durable goal state:
+  - intent
+  - domain
+  - target users
+  - constraints
+  - references
+  - must-have features
+  - nice-to-have features
+  - risks
+  - unknowns
+  - decisions
+  - completeness score
+- Provider abstraction for:
+  - OpenRouter
+  - LM Studio OpenAI-compatible endpoint
+  - Ollama OpenAI-compatible endpoint
+- Tavily search provider hook
+- Local image upload for UI/design, product/function, and mood/style references
+- Dashboard document generation:
+  - Goal Brief
+  - Requirements
+  - Technical Spec
+  - AI Implementation Prompt
+
+## Setup
+
+```powershell
+npm install
+Copy-Item .env.example .env
+npm run db:init
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Open:
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+```text
+http://localhost:3000
+```
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+## Provider Configuration
 
-## Learn More
+Edit `.env`:
 
-To learn more about Next.js, take a look at the following resources:
+```text
+OPENROUTER_API_KEY=""
+OPENROUTER_MODEL="openai/gpt-4.1-mini"
+LOCAL_LLM_BASE_URL="http://localhost:1234/v1"
+LOCAL_LLM_MODEL="local-model"
+OLLAMA_BASE_URL="http://localhost:11434/v1"
+OLLAMA_MODEL="llama3.1"
+TAVILY_API_KEY=""
+```
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+OpenRouter requires `OPENROUTER_API_KEY`. LM Studio and Ollama are called through their OpenAI-compatible `/v1/chat/completions` endpoints.
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+If no provider key or local model is available, the app still creates a fallback local goal draft so the UI and persistence flow remain usable.
 
-## Deploy on Vercel
+## Development
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+```powershell
+npm run lint
+npm run build
+npm run db:init
+```
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+## Product Direction
+
+The MVP is intentionally local-first. The code keeps provider, search, storage, and document-generation boundaries separate so the project can later grow into a SaaS product with auth, team workspaces, cloud storage, and billing.
