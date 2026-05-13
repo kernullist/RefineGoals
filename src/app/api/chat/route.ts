@@ -13,7 +13,7 @@ import {
   serializeList,
   toGoalState,
 } from "@/lib/goal-state";
-import { searchWeb, summarizeSearch } from "@/lib/search";
+import { searchImages, searchWeb, summarizeSearch } from "@/lib/search";
 
 const chatSchema = z.object({
   sessionId: z.string().optional(),
@@ -56,6 +56,10 @@ type ModelPayload = {
     description?: string;
     tradeoff?: string;
     reply?: string;
+    imageQuery?: string;
+    imageUrl?: string;
+    imageAlt?: string;
+    visualHint?: string;
   }>;
   suggestedArtifacts?: string[];
 };
@@ -95,6 +99,27 @@ function fallbackAssistant(message: string, reason?: string): ModelPayload {
       "AI Implementation Prompt",
     ],
   };
+}
+
+async function enrichChoiceImages(
+  choices: NonNullable<ModelPayload["suggestedChoices"]>,
+) {
+  return Promise.all(
+    choices.map(async (choice) => {
+      if (choice.imageUrl || !choice.imageQuery) {
+        return choice;
+      }
+
+      const images = await searchImages(choice.imageQuery);
+      const image = images[0];
+
+      return {
+        ...choice,
+        imageUrl: image?.url,
+        imageAlt: image?.description || choice.title,
+      };
+    }),
+  );
 }
 
 export async function POST(request: Request) {
@@ -199,7 +224,10 @@ export async function POST(request: Request) {
     });
   });
 
-  const nextQuestions = payload.nextQuestions || [];
+  const nextQuestions = (payload.nextQuestions || []).slice(0, 1);
+  const suggestedChoices = await enrichChoiceImages(
+    payload.suggestedChoices || [],
+  );
   const assistantMessageBase =
     payload.assistantMessage ||
     "목표 상태를 업데이트했습니다. 오른쪽 패널에서 결정사항과 빈틈을 확인할 수 있습니다.";
@@ -223,7 +251,7 @@ export async function POST(request: Request) {
       searchResults,
       searchForced,
       nextQuestions,
-      suggestedChoices: payload.suggestedChoices || [],
+      suggestedChoices,
       suggestedArtifacts: payload.suggestedArtifacts || [],
     }),
   });

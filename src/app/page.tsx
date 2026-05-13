@@ -149,6 +149,10 @@ function metadataOf(message: Message) {
         description?: string;
         tradeoff?: string;
         reply?: string;
+        imageQuery?: string;
+        imageUrl?: string;
+        imageAlt?: string;
+        visualHint?: string;
       }>;
       suggestedArtifacts?: string[];
     };
@@ -194,6 +198,59 @@ function ListBlock({
         </div>
       )}
     </section>
+  );
+}
+
+function ChoicePreview({ choice }: {
+  choice: {
+    title?: string;
+    imageUrl?: string;
+    imageAlt?: string;
+    visualHint?: string;
+  };
+}) {
+  if (choice.imageUrl) {
+    return (
+      <div className="mb-2 overflow-hidden rounded-md border border-slate-200 bg-slate-100">
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img
+          alt={choice.imageAlt || choice.title || "UX reference"}
+          className="h-28 w-full object-cover"
+          loading="lazy"
+          src={choice.imageUrl}
+        />
+      </div>
+    );
+  }
+
+  return (
+    <div className="mb-2 rounded-md border border-slate-200 bg-slate-950 p-2">
+      <div className="mb-2 flex gap-1">
+        <span className="h-1.5 w-1.5 rounded-full bg-red-300" />
+        <span className="h-1.5 w-1.5 rounded-full bg-yellow-300" />
+        <span className="h-1.5 w-1.5 rounded-full bg-green-300" />
+      </div>
+      <div className="grid grid-cols-[1fr_1.6fr] gap-2">
+        <div className="space-y-1">
+          <div className="h-3 rounded bg-cyan-300/80" />
+          <div className="h-3 rounded bg-slate-600" />
+          <div className="h-3 rounded bg-slate-700" />
+        </div>
+        <div className="space-y-1">
+          <div className="h-12 rounded bg-white/90" />
+          <div className="grid grid-cols-3 gap-1">
+            <div className="h-8 rounded bg-cyan-200" />
+            <div className="h-8 rounded bg-slate-300" />
+            <div className="h-8 rounded bg-slate-400" />
+          </div>
+        </div>
+      </div>
+      {choice.visualHint ? (
+        <p className="mt-2 line-clamp-2 text-[11px] leading-4 text-slate-300">
+          {choice.visualHint}
+        </p>
+      ) : null}
+    </div>
   );
 }
 
@@ -603,6 +660,7 @@ export default function Home() {
                                 }
                                 type="button"
                               >
+                                <ChoicePreview choice={choice} />
                                 <div className="text-xs font-semibold text-slate-900">
                                   {choice.title || `옵션 ${index + 1}`}
                                 </div>
