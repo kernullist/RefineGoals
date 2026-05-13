@@ -15,6 +15,14 @@ export type ModelResult = {
   providerUsed: ProviderId;
 };
 
+function normalizeModelName(provider: ProviderId, model: string): string {
+  if (provider === "deepseek" && model.startsWith("deepseek/")) {
+    return model.slice("deepseek/".length);
+  }
+
+  return model;
+}
+
 const providerConfig: Record<
   ProviderId,
   {
@@ -31,7 +39,7 @@ const providerConfig: Record<
   deepseek: {
     baseUrl: process.env.DEEPSEEK_BASE_URL || "https://api.deepseek.com/v1",
     apiKey: process.env.DEEPSEEK_API_KEY,
-    model: process.env.DEEPSEEK_MODEL || "deepseek-chat",
+    model: process.env.DEEPSEEK_MODEL || "deepseek-v4-flash",
   },
   lmstudio: {
     baseUrl: process.env.LOCAL_LLM_BASE_URL || "http://localhost:1234/v1",
@@ -67,7 +75,7 @@ export async function callModel(input: ChatInput): Promise<ModelResult> {
         : {}),
     },
     body: JSON.stringify({
-      model: config.model,
+      model: normalizeModelName(input.provider, config.model),
       messages: input.messages,
       temperature: 0.35,
       response_format: { type: "json_object" },

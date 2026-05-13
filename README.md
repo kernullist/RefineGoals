@@ -56,7 +56,7 @@ OPENROUTER_API_KEY=""
 OPENROUTER_MODEL="openai/gpt-4.1-mini"
 DEEPSEEK_API_KEY=""
 DEEPSEEK_BASE_URL="https://api.deepseek.com/v1"
-DEEPSEEK_MODEL="deepseek-chat"
+DEEPSEEK_MODEL="deepseek-v4-flash"
 LOCAL_LLM_BASE_URL="http://localhost:1234/v1"
 LOCAL_LLM_MODEL="local-model"
 OLLAMA_BASE_URL="http://localhost:11434/v1"
@@ -74,6 +74,8 @@ Provider selection is explicit. If multiple providers and models are configured 
 - `Ollama` uses `OLLAMA_MODEL`
 
 There is no automatic priority or fallback between configured providers yet. If the selected provider fails, the MVP falls back to the local rule-based draft so the session and dashboard still update.
+
+For the direct DeepSeek API, use direct model names such as `deepseek-v4-flash` or `deepseek-v4-pro`. OpenRouter-style names such as `deepseek/deepseek-v4-pro` are automatically normalized only when the selected provider is `DeepSeek`.
 
 If no provider key or local model is available, the app still creates a fallback local goal draft so the UI and persistence flow remain usable.
 
