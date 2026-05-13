@@ -67,6 +67,12 @@ const providerLabels: Record<ProviderId, string> = {
   ollama: "Ollama",
 };
 
+const providerIds = Object.keys(providerLabels) as ProviderId[];
+
+function isProviderId(value: string | null): value is ProviderId {
+  return Boolean(value && providerIds.includes(value as ProviderId));
+}
+
 function metadataOf(message: Message) {
   try {
     return JSON.parse(message.metadata || "{}") as {
@@ -123,7 +129,18 @@ export default function Home() {
   const [sessions, setSessions] = useState<Session[]>([]);
   const [activeId, setActiveId] = useState<string>("");
   const [input, setInput] = useState("");
-  const [provider, setProvider] = useState<ProviderId>("openrouter");
+  const [provider, setProvider] = useState<ProviderId>(() => {
+    if (typeof window === "undefined") {
+      return "openrouter";
+    }
+
+    const savedProvider = window.localStorage.getItem("refinegoals.provider");
+    if (isProviderId(savedProvider)) {
+      return savedProvider;
+    }
+
+    return "openrouter";
+  });
   const [useSearch, setUseSearch] = useState(true);
   const [loading, setLoading] = useState(false);
   const [uploading, setUploading] = useState(false);
@@ -145,6 +162,10 @@ export default function Home() {
 
     void load();
   }, []);
+
+  useEffect(() => {
+    window.localStorage.setItem("refinegoals.provider", provider);
+  }, [provider]);
 
   useEffect(() => {
     endRef.current?.scrollIntoView({
