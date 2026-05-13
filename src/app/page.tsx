@@ -13,7 +13,14 @@ import {
   Sparkles,
   Target,
 } from "lucide-react";
-import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
+import {
+  FormEvent,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  useSyncExternalStore,
+} from "react";
 
 type ProviderId = "openrouter" | "deepseek" | "lmstudio" | "ollama";
 
@@ -73,6 +80,42 @@ function isProviderId(value: string | null): value is ProviderId {
   return Boolean(value && providerIds.includes(value as ProviderId));
 }
 
+function getStoredProvider(): ProviderId {
+  if (typeof window === "undefined") {
+    return "openrouter";
+  }
+
+  const savedProvider = window.localStorage.getItem("refinegoals.provider");
+  if (isProviderId(savedProvider)) {
+    return savedProvider;
+  }
+
+  return "openrouter";
+}
+
+function subscribeProvider(callback: () => void) {
+  window.addEventListener("storage", callback);
+
+  return () => {
+    window.removeEventListener("storage", callback);
+  };
+}
+
+function useStoredProvider() {
+  const provider = useSyncExternalStore<ProviderId>(
+    subscribeProvider,
+    getStoredProvider,
+    () => "openrouter",
+  );
+
+  const setStoredProvider = (nextProvider: ProviderId) => {
+    window.localStorage.setItem("refinegoals.provider", nextProvider);
+    window.dispatchEvent(new StorageEvent("storage"));
+  };
+
+  return [provider, setStoredProvider] as const;
+}
+
 function metadataOf(message: Message) {
   try {
     return JSON.parse(message.metadata || "{}") as {
@@ -129,18 +172,7 @@ export default function Home() {
   const [sessions, setSessions] = useState<Session[]>([]);
   const [activeId, setActiveId] = useState<string>("");
   const [input, setInput] = useState("");
-  const [provider, setProvider] = useState<ProviderId>(() => {
-    if (typeof window === "undefined") {
-      return "openrouter";
-    }
-
-    const savedProvider = window.localStorage.getItem("refinegoals.provider");
-    if (isProviderId(savedProvider)) {
-      return savedProvider;
-    }
-
-    return "openrouter";
-  });
+  const [provider, setProvider] = useStoredProvider();
   const [useSearch, setUseSearch] = useState(true);
   const [loading, setLoading] = useState(false);
   const [uploading, setUploading] = useState(false);
@@ -162,10 +194,6 @@ export default function Home() {
 
     void load();
   }, []);
-
-  useEffect(() => {
-    window.localStorage.setItem("refinegoals.provider", provider);
-  }, [provider]);
 
   useEffect(() => {
     endRef.current?.scrollIntoView({
