@@ -32,16 +32,31 @@ type ModelPayload = {
 };
 
 function parsePayload(content: string): ModelPayload {
-  const parsed = JSON.parse(content) as ModelPayload;
-  return parsed;
+  try {
+    const parsed = JSON.parse(content) as ModelPayload;
+    return parsed;
+  } catch {
+    const start = content.indexOf("{");
+    const end = content.lastIndexOf("}");
+
+    if (start >= 0 && end > start) {
+      const parsed = JSON.parse(content.slice(start, end + 1)) as ModelPayload;
+      return parsed;
+    }
+
+    return {
+      assistantMessage: content,
+    };
+  }
 }
 
-function fallbackAssistant(message: string): ModelPayload {
+function fallbackAssistant(message: string, reason?: string): ModelPayload {
   const state = createFallbackState(message);
+  const suffix = reason ? `\n\n실패 원인: ${reason}` : "";
 
   return {
     assistantMessage:
-      "지금은 모델 호출 설정이 없어서 로컬 규칙으로 목표 초안을 만들었습니다. API 키나 로컬 LLM을 연결하면 다음 턴부터 더 정교하게 구체화할 수 있습니다.",
+      `모델 응답을 가져오지 못해서 로컬 규칙으로 목표 초안을 임시 생성했습니다. 제공자, 모델명, 검색 API 응답, 네트워크 상태를 확인해 주세요.${suffix}`,
     goalState: state as Record<string, unknown>,
     nextQuestions: state.unknowns as string[],
     suggestedArtifacts: [
@@ -118,7 +133,8 @@ export async function POST(request: Request) {
     payload = parsePayload(result.content);
     providerUsed = result.providerUsed;
   } catch (error) {
-    payload = fallbackAssistant(input.message);
+    const reason = error instanceof Error ? error.message : "Unknown model error";
+    payload = fallbackAssistant(input.message, reason);
     providerUsed = "fallback";
     console.error(error);
   }
